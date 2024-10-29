@@ -1,12 +1,11 @@
 [package]
-name = "yield_amm"
-version = "1.0.0"
-edition = "2021"
-resolver = "2"
+name = "amm"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-scrypto = { version = "1.2.0" }
-scrypto_math = { git = "https://github.com/ociswap/scrypto-math", tag = "v0.6.0" }
+scrypto = { workspace = true }
+scrypto_math = { workspace = true}
 off_ledger = { path = "../off_ledger" }
 common = { path = "../common" }
 
@@ -15,21 +14,9 @@ scrypto-test = { version = "1.2.0" }
 radix-transactions = { version = "1.2.0" }
 test-case = "3.0"
 
-[profile.release]
-opt-level = 'z'        # Optimize for size.
-lto = true             # Enable Link Time Optimization.
-codegen-units = 1      # Reduce number of codegen units to increase optimizations.
-panic = 'abort'        # Abort on panic.
-strip = true           # Strip the symbols.
-overflow-checks = true # Panic in the case of an overflow.
-
 [features]
 default = []
 test = []
 
 [lib]
 crate-type = ["cdylib", "lib"]
-
-[workspace]
-# Set the package crate as its own empty workspace, to hide it from any potential ancestor workspace
-# Remove this [workspace] section if you intend the package to be part of a Cargo workspace

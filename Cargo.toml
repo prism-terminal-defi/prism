@@ -1,0 +1,25 @@
+[workspace]
+resolve = "2"
+members = [
+    "amm",
+    "yield_tokenizer",
+    "common",
+    "off_ledger",
+    "yield_tokenizer/testing"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+scrypto = { version = "1.2.0" }
+scrypto_math = { git = "https://github.com/ociswap/scrypto-math", tag = "v0.6.0" }
+
+[profile.release]
+opt-level = 'z'        # Optimize for size.
+lto = true             # Enable Link Time Optimization.
+codegen-units = 1      # Reduce number of codegen units to increase optimizations.
+panic = 'abort'        # Abort on panic.
+strip = true           # Strip the symbols.
+overflow-checks = true # Panic in the case of an overflow.
