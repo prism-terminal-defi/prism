@@ -40,7 +40,7 @@ mod yield_amm {
     // }
 
     extern_blueprint! {
-        "package_sim1p5n8qgf24qq7wxlxg7u2fyjfcrq860vsqnh9hv8neak98n40rz3hdv",
+        "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         YieldTokenizer {
             fn tokenize_yield(
                 &mut self, 
@@ -54,16 +54,9 @@ mod yield_amm {
             ) -> (FungibleBucket, Option<NonFungibleBucket>);
             fn pt_address(&self) -> ResourceAddress;
             fn yt_address(&self) -> ResourceAddress;
-            fn underlying_resource(&self) -> ResourceAddress;
+            fn underlying_asset(&self) -> ResourceAddress;
             fn maturity_date(&self) -> UtcDateTime;
-            fn get_yield_tokenizer_assets(
-                &self,
-                underlying_asset: ResourceAddress,
-            ) -> (ResourceAddress, ResourceAddress);
-            fn get_maturity_date(
-                &self,
-                underlying_asset: ResourceAddress
-            ) -> UtcDateTime;
+            fn asset_addresses(&self) -> (ResourceAddress, ResourceAddress);
         }
     }
 
@@ -153,11 +146,11 @@ mod yield_amm {
 
             let yield_tokenizer_component: Global<YieldTokenizer> = yield_tokenizer_address.into();
 
-            let underlying_asset_address = yield_tokenizer_component.underlying_resource();
+            let underlying_asset_address = yield_tokenizer_component.underlying_asset();
             let (pt_address, yt_address) = 
-                yield_tokenizer_component.get_yield_tokenizer_assets(underlying_asset_address);
+                yield_tokenizer_component.asset_addresses();
 
-            let maturity_date = yield_tokenizer_component.get_maturity_date(underlying_asset_address);
+            let maturity_date = yield_tokenizer_component.maturity_date();
 
             let owner_role = OwnerRole::Updatable(AccessRule::from(owner_role_node.clone()));
             let combined_rule_node = owner_role_node.or(AccessRuleNode::from(global_component_caller_badge));

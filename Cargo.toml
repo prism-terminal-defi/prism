@@ -16,6 +16,8 @@ edition = "2021"
 scrypto = { version = "1.2.0" }
 scrypto_math = { git = "https://github.com/ociswap/scrypto-math", tag = "v0.6.0" }
 radix-common = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.2.0" }
+common = { path = "common" }
+off_ledger = { path = "off_ledger" }
 
 
 [profile.release]

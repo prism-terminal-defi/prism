@@ -10,7 +10,7 @@ pub mod yield_amm_factory {
     }
 
     extern_blueprint! {
-        "package_sim1p5n8qgf24qq7wxlxg7u2fyjfcrq860vsqnh9hv8neak98n40rz3hdv",
+        "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         YieldTokenizerFactory {
             fn tokenize_yield(
                 &mut self, 
@@ -37,7 +37,7 @@ pub mod yield_amm_factory {
 
     const TOKENIZER_FACTORY: Global<YieldTokenizerFactory> = global_component! (
         YieldTokenizerFactory,
-        "component_sim1cqmlz28nc48t7mc5vzgw2lpa3v2dwqtmf5pmx7kwsj8wt3s0ryz43z"
+        "component_sim1cr56r93g67fc6cmu8ump7n878jvndyztnns0a3slrafpc7jk2t366c"
     );
 
     pub struct YieldAMMFactory {

@@ -6,8 +6,8 @@ edition.workspace = true
 [dependencies]
 scrypto = { workspace = true }
 scrypto_math = { workspace = true}
-off_ledger = { path = "../off_ledger" }
-common = { path = "../common" }
+off_ledger = { workspace = true }
+common = { workspace = true }
 
 [dev-dependencies]
 scrypto-test = { version = "1.2.0" }

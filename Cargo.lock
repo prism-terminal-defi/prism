@@ -1737,6 +1737,9 @@ dependencies = [
 name = "testing"
 version = "0.1.0"
 dependencies = [
+ "amm",
+ "common",
+ "off_ledger",
  "radix-common 1.2.0 (git+https://github.com/radixdlt/radixdlt-scrypto?tag=v1.2.0)",
  "radix-engine",
  "radix-engine-interface",
@@ -1744,6 +1747,7 @@ dependencies = [
  "sbor 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "scrypto",
  "scrypto-test",
+ "scrypto_math",
  "yield_tokenizer",
 ]
 
