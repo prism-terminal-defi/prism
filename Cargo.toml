@@ -5,7 +5,7 @@ members = [
     "yield_tokenizer",
     "common",
     "off_ledger",
-    "yield_tokenizer/testing"
+    "testing"
 ]
 
 [workspace.package]
