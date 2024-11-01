@@ -146,14 +146,20 @@ mod yield_amm {
 
             let yield_tokenizer_component: Global<YieldTokenizer> = yield_tokenizer_address.into();
 
-            let underlying_asset_address = yield_tokenizer_component.underlying_asset();
+            let underlying_asset_address = 
+                yield_tokenizer_component.underlying_asset();
+            
             let (pt_address, yt_address) = 
                 yield_tokenizer_component.asset_addresses();
 
             let maturity_date = yield_tokenizer_component.maturity_date();
 
-            let owner_role = OwnerRole::Updatable(AccessRule::from(owner_role_node.clone()));
-            let combined_rule_node = owner_role_node.or(AccessRuleNode::from(global_component_caller_badge));
+            let owner_role = 
+                OwnerRole::Updatable(AccessRule::from(owner_role_node.clone()));
+            
+            let combined_rule_node = 
+                owner_role_node
+                .or(AccessRuleNode::from(global_component_caller_badge));
 
             let pool_component = 
                 Blueprint::<TwoResourcePool>::instantiate(
@@ -174,7 +180,12 @@ mod yield_amm {
                 yt_address
             };
 
-            let fee_rate = PreciseDecimal::from(market_fee_input.fee_rate.ln().unwrap());
+            let fee_rate = 
+                PreciseDecimal::from(
+                    market_fee_input.fee_rate
+                    .ln()
+                    .unwrap()
+                );
 
             let market_fee = MarketFee {
                 fee_rate,
@@ -196,8 +207,10 @@ mod yield_amm {
         }
 
         // First set the natural log of the implied rate here.
-        // We also set optional inital anchor rate as the there isn't an anchor rate yet until we have the implied rate.
-        // The initial anchor rate is determined by a guess on the interest rate which trading will be most capital efficient.
+        // We also set optional inital anchor rate as the there isn't an anchor rate 
+        // yet until we have the implied rate.
+        // The initial anchor rate is determined by a guess on the interest rate 
+        // which trading will be most capital efficient.
         pub fn set_initial_ln_implied_rate(
             &mut self, 
             initial_rate_anchor: PreciseDecimal
@@ -240,13 +253,16 @@ mod yield_amm {
         }
 
         pub fn get_market_state(&mut self) -> MarketState {
-            let reserves = self.pool_component.get_vault_amounts();
+            let reserves = 
+                self.pool_component.get_vault_amounts();
+
             let market_state = MarketState {
                 total_pt: reserves[0],
                 total_asset: reserves[1],
                 scalar_root: self.market_state.scalar_root,
                 last_ln_implied_rate: self.market_state.last_ln_implied_rate,
                 maturity_date: self.market_state.maturity_date,
+                // Not sure if this belongs in "market state" perhaps market information?
                 underlying_asset_address: self.market_state.underlying_asset_address,
                 pt_address: self.market_state.pt_address,
                 yt_address: self.market_state.yt_address,
@@ -273,7 +289,11 @@ mod yield_amm {
             lsu_token: FungibleBucket, 
             principal_token: FungibleBucket
         ) -> (Bucket, Option<Bucket>) {
-            self.pool_component.contribute((lsu_token.into(), principal_token.into()))
+            self.pool_component
+                .contribute((
+                    lsu_token.into(), 
+                    principal_token.into()
+                ))
         }
 
         /// Redeems pool units for the underlying pool assets.
@@ -291,7 +311,8 @@ mod yield_amm {
             &mut self, 
             pool_units: FungibleBucket
         ) -> (Bucket, Bucket) {
-            self.pool_component.redeem(pool_units.into())
+            self.pool_component
+                .redeem(pool_units.into())
         }
 
         /// Swaps the given PT for LSU tokens.
@@ -311,22 +332,32 @@ mod yield_amm {
             assert_ne!(self.check_maturity(), true, "Market has reached its maturity");
             assert_eq!(principal_token.resource_address(), self.market_state.pt_address);
 
+            info!("[swap_exact_pt_for_lsu] Calculating state of the market...");
             let market_state = self.get_market_state();
             let time_to_expiry = self.time_to_expiry();
+            info!("[swap_exact_pt_for_lsu] Market State: {:?}", market_state);
 
             // Calcs the rate scalar and rate anchor with the current market state
+            info!("[swap_exact_pt_for_lsu] Calculating market compute...");
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
                     time_to_expiry
                 );
 
+            info!("[swap_exact_pt_for_lsu] Calculating trade...");
             // Calcs the the swap
-            let lsu_to_account = self.calc_trade(
-                principal_token.amount().checked_neg().unwrap(), 
-                time_to_expiry,
-                &market_state,
-                &market_compute,
+            let lsu_to_account = 
+                self.calc_trade(
+                    principal_token.amount().checked_neg().unwrap(), 
+                    time_to_expiry,
+                    &market_state,
+                    &market_compute,
+                );
+
+            info!(
+                "[swap_exact_pt_for_lsu] Net LSU to Return: {:?}", 
+                lsu_to_account
             );
 
             info!(
@@ -345,7 +376,13 @@ mod yield_amm {
             );
 
             // Saves the new implied rate.
-            self.market_state.last_ln_implied_rate = 
+            info!("[swap_exact_pt_for_lsu] Updating implied rate...");
+            info!(
+                "[swap_exact_pt_for_lsu] Implied Rate Before Trade: {:?}",
+                self.market_state.last_ln_implied_rate
+            );
+
+            let new_implied_rate =    
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
@@ -353,9 +390,20 @@ mod yield_amm {
                 );
 
             info!(
-                "[swap_exact_pt_for_lsu] LSU Returned: {:?}", 
-                owed_lsu_bucket.amount()
+                "[swap_exact_pt_for_lsu] Implied Rate After Trade: {:?}",
+                new_implied_rate
             );
+
+            // What does it mean when implied rate decrease/increase after a trade?
+            info!(
+                "[swap_exact_pt_for_lsu] New Implied Rate Movement Decrease: {:?}",
+                self.market_state.last_ln_implied_rate
+                .checked_sub(new_implied_rate)
+                .unwrap()
+                .is_negative()
+            );
+
+            self.market_state.last_ln_implied_rate = new_implied_rate;
 
             return owed_lsu_bucket.as_fungible()
         }
@@ -389,10 +437,44 @@ mod yield_amm {
             assert_eq!(lsu_token.resource_address(), self.market_state.underlying_asset_address);
 
             let time_to_expiry = self.time_to_expiry();
-
             let market_state = self.get_market_state();
 
             // Calcs the rate scalar and rate anchor with the current market state
+            // Important to calculate this before trade happens to ensure 
+            // interest rate continuity and set the rate anchor.
+            // Important for 3 reasons:
+            // 1. Price Consistency:
+            // Without interest rate continuity, the implied interest rate could jump suddenly between trades
+            // For example, if two users make similar trades close in time, they should get similar rates
+            // The rate_anchor adjustment ensures that each trade starts from the last established market rate
+            // 2. Market Stability:
+            // Interest rates in the market should change smoothly based on supply and demand
+            // Sudden jumps in interest rates could:
+            // Create arbitrage opportunities
+            // Discourage trading due to unpredictable rates
+            // Lead to market manipulation
+            // 3. Fair Price Discovery: Consider this example:
+            // Initial state:
+            // - Market implied rate: 5%
+            // - User A wants to trade 100 PT
+            
+            // Without continuity:
+            // - The rate might reset arbitrarily
+            // - User A's trade might suddenly see a different base rate
+            // - The price impact wouldn't solely reflect their trade size
+            
+            // With continuity:
+            // - The trade starts from the 5% rate
+            // - Any change in rate is due to the trade's size
+            // - The price impact is predictable and fair
+            
+            // 4. Predictable Slippage:
+            // Traders need to estimate their trade's impact
+            // Interest rate continuity ensures that:
+            // The starting point is known (lastImpliedRate)
+            // The price impact is solely from their trade size
+            // Slippage calculations are reliable
+
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
@@ -525,9 +607,16 @@ mod yield_amm {
 
             info!("[flash_swap] Principal Token Amount: {:?}", principal_token.amount());
 
-            let yield_token_data: YieldTokenData = yield_token.as_non_fungible().non_fungible().data();
+            let yield_token_data: YieldTokenData = 
+                yield_token
+                .as_non_fungible()
+                .non_fungible()
+                .data();
 
-            info!("[swap_exact_lsu_for_yt] YT Amount: {:?}", yield_token_data.underlying_lsu_amount);
+            info!(
+                "[swap_exact_lsu_for_yt] YT Amount: {:?}", 
+                yield_token_data.underlying_lsu_amount
+            );
 
             assert!(
                 principal_token.amount() >= guess_amount_to_swap_in
@@ -592,7 +681,12 @@ mod yield_amm {
 
             // Combine PT and YT to redeem LSU
             let (mut lsu_token, option_yt_bucket) = 
-                self.yield_tokenizer_component.redeem(pt_flash_loan, yield_token, amount_yt_to_swap_in);
+                self.yield_tokenizer_component
+                    .redeem(
+                        pt_flash_loan, 
+                        yield_token, 
+                        amount_yt_to_swap_in
+                    );
 
             // Retrieve flash loan requirements to ensure enough can be swapped back to repay
             // the flash loan.
@@ -634,13 +728,18 @@ mod yield_amm {
 
             lsu_token.put(returned_lsu);
             
-            let optional_return_bucket = self.flash_loan_repay(pt_flash_loan_repay, flash_loan_receipt);
+            let optional_return_bucket = 
+                self.flash_loan_repay(
+                    pt_flash_loan_repay, 
+                    flash_loan_receipt
+                );
 
-            self.market_state.last_ln_implied_rate = self.get_ln_implied_rate(
-                time_to_expiry, 
-                market_compute,
-                market_state
-            );
+            self.market_state.last_ln_implied_rate = 
+                self.get_ln_implied_rate(
+                    time_to_expiry, 
+                    market_compute,
+                    market_state
+                );
 
             info!("[swap_exact_yt_for_lsu] LSU Returned: {:?}", lsu_token.amount());
             
@@ -745,6 +844,16 @@ mod yield_amm {
                 rate_scalar
             );
 
+            info!(
+                "[compute_market] 
+                Pre-trade Proportion: {:?}
+                Rate Scalar: {:?}
+                Rate Anchor: {:?}",
+                proportion,
+                rate_scalar,
+                rate_anchor
+            );
+
             MarketCompute {
                 rate_scalar,
                 rate_anchor,
@@ -769,29 +878,36 @@ mod yield_amm {
                 market_state.total_asset
             );
 
-            info!("[Calc_trade] Market Compute: {:?}", market_compute);
-            info!("[Calc_trade] Net PT Amount: {:?}", net_pt_amount);
-            info!("[Calc_trade] Total PT State: {:?}", market_state.total_pt);
-            info!("[Calc_trade] Total Asset State: {:?}", market_state.total_asset);
-            info!("[Calc_trade] Proportion: {:?}", proportion);
+            info!("[calc_trade] Trade Proportion: {:?}", proportion);
 
             // Calcs exchange rate based on size of the trade (change)
-            let pre_fee_exchange_rate = calc_exchange_rate(
-                proportion,
-                market_compute.rate_anchor,
-                market_compute.rate_scalar
+            let pre_fee_exchange_rate = 
+                calc_exchange_rate(
+                    proportion,
+                    market_compute.rate_anchor,
+                    market_compute.rate_scalar
+                );
+
+            info!(
+                "[calc_trade] Exchange Rate Before Fees: {:?}", 
+                pre_fee_exchange_rate
             );
 
-            info!("[Calc_trade] Pre Fee Exchange Rate: {:?}", pre_fee_exchange_rate);
-
+            // Retrieve amount returned by applying the exchange rate
+            // against asset swapped in (before fees are applied)
             let pre_fee_amount = 
                 net_pt_amount
                 .checked_div(pre_fee_exchange_rate)
-                .unwrap()
-                .checked_neg()
+                .and_then(
+                    |amount|
+                    amount.checked_neg()
+                )
                 .unwrap();
 
-            info!("[Calc_trade] Pre Fee Amount: {:?}", pre_fee_amount);
+            info!(
+                "[calc_trade] Amount to Return Before Fees: {:?}", 
+                pre_fee_amount
+            );
 
             let fee = calc_fee(
                 self.market_fee.fee_rate,
@@ -801,18 +917,30 @@ mod yield_amm {
                 pre_fee_amount
             );
 
-            info!("[Calc_trade] Fee: {:?}", fee);
+            info!("[calc_trade] Base Fee: {:?}", fee);
 
             // Fee allocated to the asset reserve
+            // Portion of fees kept in the pool as additional liquidity
+            // Helps maintain pool stability
+            // Provides incentive for liquidity providers
+            // Acts as a buffer against impermanent loss
+            // Grows the pool's reserves over time
             let net_asset_fee_to_reserve =
                 fee
                 .checked_mul(self.market_fee.reserve_fee_percent)
                 .unwrap();
 
-            info!("[Calc_trade] Net Asset Fee: {:?}", net_asset_fee_to_reserve);
+            info!(
+                "[calc_trade] Reserve Fee: {:?}", 
+                net_asset_fee_to_reserve
+            );
 
             // Trading fee allocated to the reserve based on the direction
             // of the trade.
+            // Main protocol revenue
+            // Compensates for market making risk
+            // Helps prevent market manipulation
+            // Creates a cost for frequent trading
             let trading_fee = 
                 fee
                 .checked_sub(net_asset_fee_to_reserve)
@@ -827,25 +955,35 @@ mod yield_amm {
                 .checked_sub(trading_fee)
                 .unwrap();
 
-            info!("[Calc_trade] Net Amount: {:?}", net_amount);
+            info!(
+                "[calc_trade] 
+                Amount to Return After Trading Fees: {:?}", 
+                net_amount
+            );
 
             // Net amount can be negative depending on direciton of the trade.
             // However, we want to have net amount to be positive to be able to 
             // perform the asset swap.
             let net_amount = if net_amount < PreciseDecimal::ZERO {
                 // LSU ---> PT
+                info!("[calc_trade] Trade Direction: LSU ---> PT");
                 net_amount
                 .checked_add(net_asset_fee_to_reserve)
                 .and_then(|result| result.checked_abs())
                 .unwrap()
+            
             } else {
                 // PT ---> LSU
+                info!("[calc_trade] Trade Direction: PT ---> LSU");
                 net_amount
                 .checked_sub(net_asset_fee_to_reserve)
                 .unwrap()
             };
 
-            return Decimal::try_from(net_amount).ok().unwrap()
+            return 
+                Decimal::try_from(net_amount)
+                .ok()
+                .unwrap()
             
 
         }
@@ -945,7 +1083,10 @@ mod yield_amm {
             );
 
             // exchangeRate >= 1 so its ln >= 0
-            let ln_exchange_rate = exchange_rate.ln().unwrap();
+            let ln_exchange_rate = 
+                exchange_rate
+                .ln()
+                .unwrap();
 
             let ln_implied_rate = 
                 ln_exchange_rate.checked_mul(PERIOD_SIZE)
