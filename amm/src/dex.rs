@@ -2,6 +2,7 @@ use scrypto::prelude::*;
 use scrypto_math::*;
 use common::structs::*;
 use crate::liquidity_curve::*;
+use crate::events::*;
 
 /// 365 days in seconds
 const PERIOD_SIZE: Decimal = dec!(31536000);
@@ -16,29 +17,10 @@ pub struct FlashLoanReceipt {
 }
 
 #[blueprint]
+#[events(InstantiateAMMEvent)]
 mod yield_amm {
     // The associated YieldTokenizer package and component which is used to verify associated PT, YT, and 
     // LSU asset. It is also used to perform YT <---> LSU swaps.
-    // extern_blueprint! {
-    //     "package_sim1p5n8qgf24qq7wxlxg7u2fyjfcrq860vsqnh9hv8neak98n40rz3hdv",
-    //     YieldTokenizer {
-    //         fn tokenize_yield(
-    //             &mut self, 
-    //             amount: FungibleBucket
-    //         ) -> (FungibleBucket, NonFungibleBucket);
-    //         fn redeem(
-    //             &mut self, 
-    //             principal_token: FungibleBucket, 
-    //             yield_token: NonFungibleBucket,
-    //             yt_redeem_amount: Decimal
-    //         ) -> (FungibleBucket, Option<NonFungibleBucket>);
-    //         fn pt_address(&self) -> ResourceAddress;
-    //         fn yt_address(&self) -> ResourceAddress;
-    //         fn underlying_resource(&self) -> ResourceAddress;
-    //         fn maturity_date(&self) -> UtcDateTime;
-    //     }
-    // }
-
     extern_blueprint! {
         "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         YieldTokenizer {
@@ -82,7 +64,6 @@ mod yield_amm {
             check_maturity => PUBLIC;
         }
     }
-
     pub struct YieldAMM {
         /// The native pool component which manages liquidity reserves. 
         pub pool_component: Global<TwoResourcePool>,
@@ -115,14 +96,16 @@ mod yield_amm {
         ) -> Global<YieldAMM> {
             assert!(scalar_root > Decimal::ZERO);
             assert!(market_fee_input.fee_rate > Decimal::ZERO);
-            assert!(market_fee_input.reserve_fee_percent > Decimal::ZERO && market_fee_input.reserve_fee_percent < Decimal::ONE);
+            assert!(
+                market_fee_input.reserve_fee_percent > Decimal::ZERO 
+                && market_fee_input.reserve_fee_percent < Decimal::ONE
+            );
 
             let (address_reservation, component_address) =
                 Runtime::allocate_component_address(YieldAMM::blueprint_id());
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
         
-
             let flash_loan_rm: ResourceManager = 
                 ResourceBuilder::new_ruid_non_fungible::<FlashLoanReceipt>(OwnerRole::None)
                 .metadata(metadata! {
@@ -156,7 +139,7 @@ mod yield_amm {
 
             let owner_role = 
                 OwnerRole::Updatable(AccessRule::from(owner_role_node.clone()));
-            
+
             let combined_rule_node = 
                 owner_role_node
                 .or(AccessRuleNode::from(global_component_caller_badge));
@@ -191,6 +174,13 @@ mod yield_amm {
                 fee_rate,
                 reserve_fee_percent: market_fee_input.reserve_fee_percent
             };
+
+            Runtime::emit_event(
+                InstantiateAMMEvent {
+                    market_state: market_state.clone(),
+                    market_fee: market_fee.clone()
+                }
+            );
 
             Self {
                 pool_component,
@@ -290,10 +280,12 @@ mod yield_amm {
             principal_token: FungibleBucket
         ) -> (Bucket, Option<Bucket>) {
             self.pool_component
-                .contribute((
-                    lsu_token.into(), 
-                    principal_token.into()
-                ))
+                .contribute(
+                    (
+                        lsu_token.into(), 
+                        principal_token.into()
+                    )
+                )
         }
 
         /// Redeems pool units for the underlying pool assets.
