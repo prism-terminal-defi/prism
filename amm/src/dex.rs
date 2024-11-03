@@ -307,63 +307,11 @@ mod yield_amm {
         ) -> (
             Bucket, 
             Option<Bucket>, 
-            // FungibleBucket, 
-            // FungibleBucket
         ) {
 
             self.assert_market_not_expired();
 
-            // let total_pool_units = 
-            //     ResourceManager::from(self.market_info.pool_unit_address)
-            //     .total_supply()
-            //     .unwrap();
-
-            // let vault_reserves = self.get_vault_reserves();
-
-            // let pt_ratio = 
-            //     pt_bucket.amount()
-            //     .checked_mul(total_pool_units)
-            //     .and_then(
-            //         |amount|
-            //         amount.checked_div(vault_reserves[0])
-            //     )
-            //     .unwrap();
-
-            // let asset_ratio = 
-            //     asset_bucket.amount()
-            //         .checked_mul(total_pool_units)
-            //         .and_then(
-            //             |amount|
-            //             amount.checked_div(vault_reserves[1])
-            //         )
-            //         .unwrap();
-
-            // let (pt_amount, asset_amount) = if pt_ratio < asset_ratio {
-            //     let pt_amount = pt_bucket.amount();
-            //     let asset_amount = 
-            //         vault_reserves[1]
-            //         .checked_mul(pt_ratio)
-            //         .and_then(
-            //             |amount|
-            //             amount.checked_div(total_pool_units)
-            //         )
-            //         .unwrap();
-
-            //     (pt_amount, asset_amount)
-            // } else {
-
-            //     let pt_amount = 
-            //         vault_reserves[0]
-            //         .checked_mul(asset_ratio)
-            //         .and_then(
-            //             |amount|
-            //             amount.checked_div(total_pool_units)
-            //         )
-            //         .unwrap();
-            //     let asset_amount = asset_bucket.amount();
-
-            //     (pt_amount, asset_amount)
-            // };
+            // Add initial liquidity to be 50/50?
 
             self.pool_component
                 .contribute(
@@ -372,8 +320,6 @@ mod yield_amm {
                         asset_bucket.into(), 
                     )
                 )
-
-            // return (pool_units, change, pt_bucket, asset_bucket) 
         }
 
         /// Redeems pool units for the underlying pool assets.
@@ -421,6 +367,7 @@ mod yield_amm {
             let market_state = self.get_market_state();
             
             let time_to_expiry = self.time_to_expiry();
+            info!("[swap_exact_lsu_for_pt] Time to expiry: {:?}", time_to_expiry);
             
             info!(
                 "[swap_exact_pt_for_lsu] Market State: {:?}", 
@@ -586,16 +533,23 @@ mod yield_amm {
 
             // Calcs the swap
             info!("[swap_exact_lsu_for_pt] Calculating trade...");
-            let required_lsu = self.calc_trade(
-                desired_pt_amount,
-                time_to_expiry,
-                &market_state,
-                &market_compute,
-            );
+            let required_lsu = 
+                self.calc_trade(
+                    desired_pt_amount,
+                    time_to_expiry,
+                    &market_state,
+                    &market_compute,
+                );
 
             // Assert the amount of LSU sent in is at least equal to the required
             // LSU needed for the desired PT amount.
-            assert!(lsu_token.amount() >= required_lsu);
+            assert!(
+                lsu_token.amount() >= required_lsu,
+                "Asset amount: {:?}
+                Required asset amount: {:?}",
+                lsu_token.amount(),
+                required_lsu
+            );
 
             info!(
                 "[swap_exact_lsu_for_pt] All-in Exchange rate: {:?}", 
