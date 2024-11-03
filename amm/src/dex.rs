@@ -1,7 +1,7 @@
 use scrypto::prelude::*;
 use scrypto_math::*;
 use common::structs::*;
-use crate::liquidity_curve::*;
+use off_ledger::liquidity_curve::*;
 use crate::events::*;
 
 /// 365 days in seconds
