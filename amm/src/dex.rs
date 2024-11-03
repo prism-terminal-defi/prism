@@ -32,8 +32,12 @@ mod yield_amm {
                 &mut self, 
                 principal_token: FungibleBucket, 
                 yield_token: NonFungibleBucket,
-                yt_redeem_amount: Decimal
-            ) -> (FungibleBucket, Option<NonFungibleBucket>);
+            ) -> 
+                (
+                    FungibleBucket, 
+                    Option<NonFungibleBucket>,
+                    Option<FungibleBucket>,
+                );
             fn pt_address(&self) -> ResourceAddress;
             fn yt_address(&self) -> ResourceAddress;
             fn underlying_asset(&self) -> ResourceAddress;
@@ -62,6 +66,7 @@ mod yield_amm {
             compute_market => PUBLIC;
             time_to_expiry => PUBLIC;
             check_maturity => PUBLIC;
+            change_market_status => restrict_to: [OWNER];
         }
     }
     pub struct YieldAMM {
@@ -78,6 +83,7 @@ mod yield_amm {
         /// the more steep the curve is.
         pub market_fee: MarketFee,
         pub market_state: MarketState,
+        pub market_info: MarketInfo,
         pub market_is_active: bool,
     }
 
@@ -100,6 +106,7 @@ mod yield_amm {
                 market_fee_input.reserve_fee_percent > Decimal::ZERO 
                 && market_fee_input.reserve_fee_percent < Decimal::ONE
             );
+            // Should check whether market has expired
 
             let (address_reservation, component_address) =
                 Runtime::allocate_component_address(YieldAMM::blueprint_id());
@@ -152,15 +159,30 @@ mod yield_amm {
                 None,
             );
 
+            let pool_unit_global_address: GlobalAddress = 
+                pool_component
+                .get_metadata("pool_unit")
+                .unwrap()
+                .unwrap();
+
+            let pool_unit_address = 
+                ResourceAddress::try_from(pool_unit_global_address)
+                    .ok()
+                    .unwrap();
+
             let market_state = MarketState {
                 total_pt: Decimal::ZERO,
                 total_asset: Decimal::ZERO,
                 scalar_root,
                 last_ln_implied_rate: PreciseDecimal::ZERO,
+            };
+
+            let market_info = MarketInfo {
                 maturity_date,
                 underlying_asset_address,
                 pt_address,
-                yt_address
+                yt_address,
+                pool_unit_address,
             };
 
             let fee_rate = 
@@ -188,6 +210,7 @@ mod yield_amm {
                 flash_loan_rm,
                 market_fee,
                 market_state,
+                market_info,
                 market_is_active: true,
             }
             .instantiate()
@@ -213,25 +236,33 @@ mod yield_amm {
 
             let time_to_expiry = self.time_to_expiry();
 
-            let rate_scalar = calc_rate_scalar(
-                self.market_state.scalar_root,
-                time_to_expiry
-            );
-
-            let market_compute = MarketCompute {
-                rate_scalar,
-                rate_anchor: initial_rate_anchor
-            };
-
             let market_state = self.get_market_state();
 
-            self.market_state.last_ln_implied_rate = self.get_ln_implied_rate( 
-                time_to_expiry,
-                market_compute,
-                market_state,
-            );
+            let rate_scalar = 
+                calc_rate_scalar(
+                    market_state.scalar_root,
+                    time_to_expiry
+                );
 
-            info!("Implied Rate: {:?}", self.market_state.last_ln_implied_rate.exp().unwrap());
+            let market_compute = 
+                MarketCompute {
+                    rate_scalar,
+                    rate_anchor: initial_rate_anchor
+                };
+
+            let new_implied_rate =
+                self.get_ln_implied_rate( 
+                        time_to_expiry,
+                        market_compute,
+                        market_state,
+                    ); 
+
+            self.market_state.last_ln_implied_rate = new_implied_rate;
+
+            info!(
+                "Implied Rate: {:?}", 
+                self.market_state.last_ln_implied_rate.exp().unwrap()
+            );
         }
 
         pub fn get_market_implied_rate(&mut self) -> PreciseDecimal {
@@ -251,11 +282,6 @@ mod yield_amm {
                 total_asset: reserves[1],
                 scalar_root: self.market_state.scalar_root,
                 last_ln_implied_rate: self.market_state.last_ln_implied_rate,
-                maturity_date: self.market_state.maturity_date,
-                // Not sure if this belongs in "market state" perhaps market information?
-                underlying_asset_address: self.market_state.underlying_asset_address,
-                pt_address: self.market_state.pt_address,
-                yt_address: self.market_state.yt_address,
             };
 
             self.market_state = market_state;
@@ -276,16 +302,78 @@ mod yield_amm {
         /// * [`Option<Bucket>`] - An optional bucket of any remainder token.
         pub fn add_liquidity(
             &mut self, 
-            lsu_token: FungibleBucket, 
-            principal_token: FungibleBucket
-        ) -> (Bucket, Option<Bucket>) {
+            mut pt_bucket: FungibleBucket,
+            mut asset_bucket: FungibleBucket, 
+        ) -> (
+            Bucket, 
+            Option<Bucket>, 
+            // FungibleBucket, 
+            // FungibleBucket
+        ) {
+
+            self.assert_market_not_expired();
+
+            // let total_pool_units = 
+            //     ResourceManager::from(self.market_info.pool_unit_address)
+            //     .total_supply()
+            //     .unwrap();
+
+            // let vault_reserves = self.get_vault_reserves();
+
+            // let pt_ratio = 
+            //     pt_bucket.amount()
+            //     .checked_mul(total_pool_units)
+            //     .and_then(
+            //         |amount|
+            //         amount.checked_div(vault_reserves[0])
+            //     )
+            //     .unwrap();
+
+            // let asset_ratio = 
+            //     asset_bucket.amount()
+            //         .checked_mul(total_pool_units)
+            //         .and_then(
+            //             |amount|
+            //             amount.checked_div(vault_reserves[1])
+            //         )
+            //         .unwrap();
+
+            // let (pt_amount, asset_amount) = if pt_ratio < asset_ratio {
+            //     let pt_amount = pt_bucket.amount();
+            //     let asset_amount = 
+            //         vault_reserves[1]
+            //         .checked_mul(pt_ratio)
+            //         .and_then(
+            //             |amount|
+            //             amount.checked_div(total_pool_units)
+            //         )
+            //         .unwrap();
+
+            //     (pt_amount, asset_amount)
+            // } else {
+
+            //     let pt_amount = 
+            //         vault_reserves[0]
+            //         .checked_mul(asset_ratio)
+            //         .and_then(
+            //             |amount|
+            //             amount.checked_div(total_pool_units)
+            //         )
+            //         .unwrap();
+            //     let asset_amount = asset_bucket.amount();
+
+            //     (pt_amount, asset_amount)
+            // };
+
             self.pool_component
                 .contribute(
                     (
-                        lsu_token.into(), 
-                        principal_token.into()
+                        pt_bucket.into(),
+                        asset_bucket.into(), 
                     )
                 )
+
+            // return (pool_units, change, pt_bucket, asset_bucket) 
         }
 
         /// Redeems pool units for the underlying pool assets.
@@ -321,13 +409,23 @@ mod yield_amm {
             &mut self, 
             principal_token: FungibleBucket
         ) -> FungibleBucket {
-            assert_ne!(self.check_maturity(), true, "Market has reached its maturity");
-            assert_eq!(principal_token.resource_address(), self.market_state.pt_address);
-
+            self.assert_market_not_expired();
+        
+            assert_eq!(
+                principal_token.resource_address(), 
+                self.market_info.pt_address
+            );
+            
             info!("[swap_exact_pt_for_lsu] Calculating state of the market...");
+            
             let market_state = self.get_market_state();
+            
             let time_to_expiry = self.time_to_expiry();
-            info!("[swap_exact_pt_for_lsu] Market State: {:?}", market_state);
+            
+            info!(
+                "[swap_exact_pt_for_lsu] Market State: {:?}", 
+                market_state
+            );
 
             // Calcs the rate scalar and rate anchor with the current market state
             info!("[swap_exact_pt_for_lsu] Calculating market compute...");
@@ -357,22 +455,28 @@ mod yield_amm {
                 principal_token.amount().checked_div(lsu_to_account).unwrap()
             );
 
-            // Deposit all given PT tokens to the pool.
+            // *                    STATE CHANGES                       * //
+
             self.pool_component.protected_deposit(principal_token.into());
 
-            // Withdraw the amount of LSU tokens from the pool.
             let owed_lsu_bucket = self.pool_component.protected_withdraw(
-                self.market_state.underlying_asset_address, 
+                self.market_info.underlying_asset_address, 
                 lsu_to_account, 
                 WithdrawStrategy::Rounded(RoundingMode::ToZero)
             );
 
-            // Saves the new implied rate.
             info!("[swap_exact_pt_for_lsu] Updating implied rate...");
             info!(
                 "[swap_exact_pt_for_lsu] Implied Rate Before Trade: {:?}",
-                self.market_state.last_ln_implied_rate
+                self.market_state.last_ln_implied_rate.exp().unwrap()
             );
+
+            // let market_state = self.get_market_state();
+            // let market_compute = 
+            //     self.compute_market(
+            //         market_state.clone(),
+            //         time_to_expiry
+            //     );
 
             let new_implied_rate =    
                 self.get_ln_implied_rate(
@@ -383,7 +487,7 @@ mod yield_amm {
 
             info!(
                 "[swap_exact_pt_for_lsu] Implied Rate After Trade: {:?}",
-                new_implied_rate
+                new_implied_rate.exp().unwrap()
             );
 
             // What does it mean when implied rate decrease/increase after a trade?
@@ -396,6 +500,8 @@ mod yield_amm {
             );
 
             self.market_state.last_ln_implied_rate = new_implied_rate;
+
+            // *                    STATE CHANGES                       * //
 
             return owed_lsu_bucket.as_fungible()
         }
@@ -425,8 +531,12 @@ mod yield_amm {
             mut lsu_token: FungibleBucket, 
             desired_pt_amount: Decimal
         ) -> (FungibleBucket, FungibleBucket) {
-            assert_ne!(self.check_maturity(), true, "Maturity date has lapsed");
-            assert_eq!(lsu_token.resource_address(), self.market_state.underlying_asset_address);
+            self.assert_market_not_expired();
+            
+            assert_eq!(
+                lsu_token.resource_address(), 
+                self.market_info.underlying_asset_address
+            );
 
             let time_to_expiry = self.time_to_expiry();
             let market_state = self.get_market_state();
@@ -467,6 +577,7 @@ mod yield_amm {
             // The price impact is solely from their trade size
             // Slippage calculations are reliable
 
+            info!("[swap_exact_lsu_for_pt] Calculating market compute...");
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
@@ -474,6 +585,7 @@ mod yield_amm {
                 );
 
             // Calcs the swap
+            info!("[swap_exact_lsu_for_pt] Calculating trade...");
             let required_lsu = self.calc_trade(
                 desired_pt_amount,
                 time_to_expiry,
@@ -498,23 +610,55 @@ mod yield_amm {
                 required_lsu_bucket.amount()
             );
 
-            // Deposit the required LSU to the pool.
+            // *                    STATE CHANGES                       * //
+            
             self.pool_component.protected_deposit(required_lsu_bucket.into());
 
-            // Withdraw the desired PT amount.
-            let owed_pt_bucket = self.pool_component.protected_withdraw(
-                self.market_state.pt_address, 
-                desired_pt_amount, 
-                WithdrawStrategy::Rounded(RoundingMode::ToZero)
-            );
+            
+            let owed_pt_bucket = 
+                self.pool_component.protected_withdraw(
+                    self.market_info.pt_address, 
+                    desired_pt_amount, 
+                    WithdrawStrategy::Rounded(RoundingMode::ToZero)
+                );
 
             // Saves the new implied rate of the trade.
-            self.market_state.last_ln_implied_rate = 
+            info!("[swap_exact_yt_for_lsu] Updating implied rate...");
+            info!(
+                "[swap_exact_yt_for_lsu] Implied Rate Before Trade: {:?}",
+                self.market_state.last_ln_implied_rate
+            );
+
+            info!("[swap_exact_yt_for_lsu] 
+                    New Total PT: {:?}
+                    New Total Asset: {:?}",
+                    market_state.total_pt,
+                    market_state.total_asset
+                );
+
+            let new_implied_rate =    
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
-                    market_state,
+                    market_state
                 );
+
+            info!(
+                "[swap_exact_yt_for_lsu] Implied Rate After Trade: {:?}",
+                new_implied_rate
+            );
+
+            info!(
+                "[swap_exact_yt_for_lsu] New Implied Rate Movement Decrease: {:?}",
+                self.market_state.last_ln_implied_rate
+                .checked_sub(new_implied_rate)
+                .unwrap()
+                .is_negative()
+            );
+
+            self.market_state.last_ln_implied_rate = new_implied_rate;
+
+            // *                    STATE CHANGES                       * //
 
             info!("[swap_exact_lsu_for_pt] Owed PT: {:?}", owed_pt_bucket.amount());
             info!("[swap_exact_lsu_for_pt] Remaining LSU: {:?}", lsu_token.amount());
@@ -545,10 +689,11 @@ mod yield_amm {
         ) 
         -> NonFungibleBucket 
         {
-            assert_ne!(
-                self.check_maturity(), 
-                true, 
-                "Market has reached its maturity"
+            self.assert_market_not_expired();
+
+            assert_eq!(
+                lsu_token.resource_address(),
+                self.market_info.underlying_asset_address
             );
 
             // There would be an algorithm to estimate the PT that can be
@@ -653,42 +798,76 @@ mod yield_amm {
             yield_token: NonFungibleBucket,
             amount_yt_to_swap_in: Decimal,
         ) 
-        -> (FungibleBucket, Option<NonFungibleBucket>, Option<FungibleBucket>) 
+        -> (
+            FungibleBucket, 
+            Option<NonFungibleBucket>, 
+            Option<FungibleBucket>
+        ) 
         {
-            assert_ne!(self.check_maturity(), true, "Market has reached its maturity");
-            assert_eq!(yield_token.resource_address(), self.market_state.yt_address);
+            self.assert_market_not_expired();
+
+            assert_eq!(
+                yield_token.resource_address(), 
+                self.market_info.yt_address
+            );
             
             // Need to borrow the same amount of PT as YT to redeem LSU
             let data: YieldTokenData = yield_token.non_fungible().data();
             let underlying_lsu_amount = data.underlying_lsu_amount;
-            assert!(underlying_lsu_amount >= amount_yt_to_swap_in);
+            
+            assert!(
+                underlying_lsu_amount >= amount_yt_to_swap_in
+            );
+
             let pt_flash_loan_amount = amount_yt_to_swap_in;
 
             // Borrow equivalent amount of PT from the pool - enough to get LSU
+            info!("[swap_exact_yt_for_lsu] Flash loan equal amount of PT to redeem underlying asset");
             let (pt_flash_loan, flash_loan_receipt) = 
                 self.flash_loan(
-                    self.market_state.pt_address, 
+                    self.market_info.pt_address, 
                     pt_flash_loan_amount
                 );
 
             // Combine PT and YT to redeem LSU
-            let (mut lsu_token, option_yt_bucket) = 
+            info!("[swap_exact_yt_for_lsu] Redeeming equivalent underlying asset from combined PT & YT");
+            let (
+                mut lsu_token, 
+                optional_yt_bucket, 
+                optional_pt_bucket
+            ) = 
                 self.yield_tokenizer_component
                     .redeem(
                         pt_flash_loan, 
                         yield_token, 
-                        amount_yt_to_swap_in
                     );
+
+            info!(
+                "[swap_exact_yt_for_lsu] Redeemed underlying asset amount: {:?}",
+                lsu_token.amount()
+            );
+
+            // info!(
+            //     "[swap_exact_yt_for_lsu] Excess YT: {:?}",
+            //     option_yt_bucket.unwrap().amount()
+            // );
 
             // Retrieve flash loan requirements to ensure enough can be swapped back to repay
             // the flash loan.
             let flash_loan_data: FlashLoanReceipt = 
-                flash_loan_receipt.as_non_fungible().non_fungible().data();
+                flash_loan_receipt
+                .as_non_fungible()
+                .non_fungible()
+                .data();
 
             let desired_pt_amount = flash_loan_data.amount;
-
-            let time_to_expiry = self.time_to_expiry();
+            
+            info!("[swap_exact_yt_for_lsu] Calculating required LSU for PT to repay loan");
+            info!("[swap_exact_yt_for_lsu] Calculating state of the market...");
             let market_state = self.get_market_state();
+            let time_to_expiry = self.time_to_expiry();
+
+            info!("[swap_exact_yt_for_lsu] Calculating market compute...");
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
@@ -696,7 +875,9 @@ mod yield_amm {
                 );
 
             // Portion of lsu is sold to the pool for PT to return the borrowed PT
-            let required_lsu = self.calc_trade(
+            info!("[swap_exact_yt_for_lsu] Calculating trade...");
+            let required_lsu = 
+                self.calc_trade(
                     desired_pt_amount,
                     time_to_expiry,
                     &market_state,
@@ -704,112 +885,263 @@ mod yield_amm {
                 );
 
             info!(
-                "[swap_exact_yt_for_lsu] All-in Exchange rate: {:?}", 
-                desired_pt_amount.checked_div(required_lsu).unwrap()
+                "[swap_exact_yt_for_lsu] Required LSU (Net LSU to Return): {:?}", 
+                required_lsu
             );
 
             info!(
-                "[swap_exact_yt_for_lsu] All-in Exchange rate: {:?}", 
+                "[swap_exact_yt_for_lsu] All-in Exchange rate of LSU/PT: {:?}", 
                 required_lsu.checked_div(desired_pt_amount).unwrap()
             );
 
-            let required_lsu_bucket = lsu_token.take(required_lsu);
+            let required_lsu_bucket = 
+                lsu_token.take(required_lsu);
 
-            let (pt_flash_loan_repay, returned_lsu) = 
-                self.swap_exact_lsu_for_pt(required_lsu_bucket, desired_pt_amount);
+
+            info!("[swap_exact_yt_for_lsu] Swapping LSU for PT...");
+            let (
+                pt_flash_loan_repay, 
+                returned_lsu
+            ) = self.swap_exact_lsu_for_pt(
+                required_lsu_bucket, 
+                desired_pt_amount
+            );
 
             lsu_token.put(returned_lsu);
             
+            info!("[swap_exact_yt_for_lsu] Repaying flash loan...");
             let optional_return_bucket = 
                 self.flash_loan_repay(
                     pt_flash_loan_repay, 
                     flash_loan_receipt
                 );
 
-            self.market_state.last_ln_implied_rate = 
+            info!("[swap_exact_yt_for_lsu] Updating implied rate...");
+            info!(
+                "[swap_exact_yt_for_lsu] Implied Rate Before Trade: {:?}",
+                self.market_state.last_ln_implied_rate
+            );
+
+            info!("[swap_exact_yt_for_lsu] 
+                New Total PT: {:?}
+                New Total Asset: {:?}",
+                market_state.total_pt,
+                market_state.total_asset
+                );
+
+            let new_implied_rate =    
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
                     market_state
                 );
 
-            info!("[swap_exact_yt_for_lsu] LSU Returned: {:?}", lsu_token.amount());
+            info!(
+                "[swap_exact_yt_for_lsu] Implied Rate After Trade: {:?}",
+                new_implied_rate
+            );
+
+            info!(
+                "[swap_exact_yt_for_lsu] New Implied Rate Movement Decrease: {:?}",
+                self.market_state.last_ln_implied_rate
+                .checked_sub(new_implied_rate)
+                .unwrap()
+                .is_negative()
+            );
+
+            self.market_state.last_ln_implied_rate = new_implied_rate;
+
+
+            info!(
+                "[swap_exact_yt_for_lsu] Actual LSU Returned: {:?}", 
+                lsu_token.amount()
+            );
+
+            info!(
+                "[swap_exact_yt_for_lsu] All-in Exchange rate of LSU/YT: {:?}", 
+                lsu_token.amount().checked_div(amount_yt_to_swap_in).unwrap()
+            );
             
-
-            return (lsu_token, option_yt_bucket, optional_return_bucket)
+            return (
+                lsu_token, 
+                optional_yt_bucket, 
+                optional_return_bucket
+            )
         }
-
 
         pub fn swap_exact_yt_for_lsu2(
             &mut self, 
             yield_token: NonFungibleBucket,
             amount_yt_to_swap_in: Decimal,
         ) 
-        -> (FungibleBucket, Option<NonFungibleBucket>) 
+            -> (
+                FungibleBucket, 
+                Option<NonFungibleBucket>,
+                Option<FungibleBucket>
+            ) 
         {
-            assert_ne!(self.check_maturity(), true, "Market has reached its maturity");
-            assert_eq!(yield_token.resource_address(), self.market_state.yt_address);
+            self.assert_market_not_expired();
+
+            assert_eq!(
+                yield_token.resource_address(), 
+                self.market_info.yt_address
+            );
             
             // Need to borrow the same amount of PT as YT to redeem LSU
             let data: YieldTokenData = yield_token.non_fungible().data();
             let underlying_lsu_amount = data.underlying_lsu_amount;
-            assert!(underlying_lsu_amount >= amount_yt_to_swap_in);
+            
+            assert!(
+                underlying_lsu_amount >= amount_yt_to_swap_in
+            );
+
             let pt_to_withdraw = amount_yt_to_swap_in;
 
-            let time_to_expiry = self.time_to_expiry();
+            info!(
+                "[swap_exact_yt_for_lsu] Simulating trade to calculate
+                Required LSU to pay back for withdrawn PT"
+            );
+            info!("[swap_exact_yt_for_lsu] Calculating state of the market...");
             let market_state = self.get_market_state();
+            let time_to_expiry = self.time_to_expiry();
+
+            info!("[swap_exact_yt_for_lsu] Calculating market compute...");
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
                     time_to_expiry
                 );
 
+            info!("[swap_exact_yt_for_lsu] Calculating trade...");
             // Do we calc_trade before any assets are removed/added?
-            let lsu_owed_for_pt_flash_swap = self.calc_trade(
+            let lsu_owed_for_pt_flash_swap = 
+                self.calc_trade(
                 // Make sure the signs are correct based on direction of the trade
-                pt_to_withdraw,
-                time_to_expiry,
-                &market_state,
-                &market_compute,
+                // Pretty sure this is positive as we are intending to withdraw PT
+                // And figuring out how much LSU is required for the PT.
+                    pt_to_withdraw,
+                    time_to_expiry,
+                    &market_state,
+                    &market_compute,
+                );
+
+            info!(
+                "[swap_exact_yt_for_lsu] 
+                Required LSU to pay back (Net LSU Returned): {:?}
+                for desired PT amount: {:?}",
+                lsu_owed_for_pt_flash_swap,
+                pt_to_withdraw
             );
 
-            let withdrawn_pt = self.pool_component.protected_withdraw(
-                self.market_state.pt_address, 
-                pt_to_withdraw, 
-                WithdrawStrategy::Exact
+            info!(
+                "[swap_exact_yt_for_lsu] All-in Exchange rate of LSU/PT: {:?}",
+                lsu_owed_for_pt_flash_swap.checked_div(pt_to_withdraw).unwrap()
             );
 
+            // *                    STATE CHANGES                       * //
+
+            info!("[swap_exact_yt_for_lsu] Withdrawing desired PT to combine with YT...");
+            let withdrawn_pt = 
+                self.pool_component.protected_withdraw(
+                    self.market_info.pt_address, 
+                    pt_to_withdraw, 
+                    WithdrawStrategy::Exact
+                );
+
+            info!("[swap_exact_yt_for_lsu] Redeeming LSU from PT & SY...");    
             // Combine PT and YT to redeem LSU
-            let (mut lsu_token, option_yt_bucket) = 
-                self.yield_tokenizer_component.redeem(withdrawn_pt.as_fungible(), yield_token, amount_yt_to_swap_in);
+            let (
+                mut lsu_token, 
+                optional_yt_bucket,
+                optional_pt_bucket,
+            ) = self.yield_tokenizer_component
+                    .redeem(
+                        withdrawn_pt.as_fungible(), 
+                        yield_token, 
+                    );
+            
+            info!(
+                "[swap_exact_yt_for_lsu] LSU Redeemed: {:?}",
+                lsu_token.amount()
+            );
 
+            
+            info!(
+                "[swap_exact_yt_for_lsu] Excess YT: {:?}",
+                optional_yt_bucket.as_ref().map(|bucket| bucket.amount().clone())
+            );
+            
+            info!(
+                "[swap_exact_yt_for_lsu] Excess PT: {:?}",
+                optional_pt_bucket.as_ref().map(|bucket| bucket.amount().clone())
+            );
+            
 
             // Do we need assertion here to make sure lsu token received is greater than lsu owed?
-            let lsu_owed_back_to_pool = 
+            // let lsu_owed_back_to_pool = 
+            //     lsu_token
+            //     .amount()
+            //     .checked_sub(lsu_owed_for_pt_flash_swap)
+            //     .unwrap();
+
+            // Can LSU redeemed be less than LSU owed?
+            let lsu_owed = 
                 lsu_token
-                .amount()
-                .checked_sub(lsu_owed_for_pt_flash_swap)
-                .unwrap();
+                .take(lsu_owed_for_pt_flash_swap);
 
-            let lsu_owed = lsu_token.take(lsu_owed_back_to_pool);
-
+            assert_eq!(lsu_owed.amount(), lsu_owed_for_pt_flash_swap);
 
             self.pool_component.protected_deposit(lsu_owed.into());
 
+            info!("[swap_exact_yt_for_lsu] Updating implied rate...");
             info!(
-                "[swap_exact_yt_for_lsu] All-in Exchange rate: {:?}", 
-                pt_to_withdraw.checked_div(lsu_owed_for_pt_flash_swap).unwrap()
+                "[swap_exact_yt_for_lsu] Implied Rate Before Trade: {:?}",
+                self.market_state.last_ln_implied_rate
             );
 
-            self.market_state.last_ln_implied_rate = self.get_ln_implied_rate(
-                time_to_expiry, 
-                market_compute,
-                market_state
+            info!("[swap_exact_yt_for_lsu] 
+                    New Total PT: {:?}
+                    New Total Asset: {:?}",
+                    market_state.total_pt,
+                    market_state.total_asset
+                );
+
+            // Do we need to update market_compute and market_state again?
+            let new_implied_rate =    
+                self.get_ln_implied_rate(
+                    time_to_expiry, 
+                    market_compute,
+                    market_state
+                );
+
+            info!(
+                "[swap_exact_yt_for_lsu] Implied Rate After Trade: {:?}",
+                new_implied_rate
             );
 
-            info!("[swap_exact_yt_for_lsu] LSU Returned: {:?}", lsu_token.amount());
+            info!(
+                "[swap_exact_yt_for_lsu] New Implied Rate Movement Decrease: {:?}",
+                self.market_state.last_ln_implied_rate
+                .checked_sub(new_implied_rate)
+                .unwrap()
+                .is_negative()
+            );
 
-            return (lsu_token, option_yt_bucket)
+            self.market_state.last_ln_implied_rate = new_implied_rate;
+
+            // *                    STATE CHANGES                       * //
+
+            info!(
+                "[swap_exact_yt_for_lsu] LSU Returned: {:?}", 
+                lsu_token.amount()
+            );
+
+            info!(
+                "[swap_exact_yt_for_lsu] All-in Exchange rate for LSU/YT: {:?}", 
+                lsu_token.amount().checked_div(amount_yt_to_swap_in).unwrap()
+            );
+
+            return (lsu_token, optional_yt_bucket, optional_pt_bucket)
         }
 
         pub fn compute_market(
@@ -862,13 +1194,12 @@ mod yield_amm {
             market_state: &MarketState,
             market_compute: &MarketCompute,
         ) -> Decimal {
-
-            // Consider using MarketState instead
-            let proportion = calc_proportion(
-                net_pt_amount,
-                market_state.total_pt,
-                market_state.total_asset
-            );
+            let proportion = 
+                calc_proportion(
+                    net_pt_amount,
+                    market_state.total_pt,
+                    market_state.total_asset
+                );
 
             info!("[calc_trade] Trade Proportion: {:?}", proportion);
 
@@ -901,13 +1232,14 @@ mod yield_amm {
                 pre_fee_amount
             );
 
-            let fee = calc_fee(
-                self.market_fee.fee_rate,
-                time_to_expiry,
-                net_pt_amount,
-                pre_fee_exchange_rate,
-                pre_fee_amount
-            );
+            let fee = 
+                calc_fee(
+                    self.market_fee.fee_rate,
+                    time_to_expiry,
+                    net_pt_amount,
+                    pre_fee_exchange_rate,
+                    pre_fee_amount
+                );
 
             info!("[calc_trade] Base Fee: {:?}", fee);
 
@@ -976,8 +1308,6 @@ mod yield_amm {
                 Decimal::try_from(net_amount)
                 .ok()
                 .unwrap()
-            
-
         }
 
         
@@ -1062,17 +1392,21 @@ mod yield_amm {
             market_state: MarketState
         ) -> PreciseDecimal {
 
-            let proportion = calc_proportion(
-                dec!(0),
-                market_state.total_pt,
-                market_state.total_asset
-            );
+            let proportion = 
+                calc_proportion(
+                    dec!(0),
+                    // market_state.total_pt,
+                    // market_state.total_asset
+                    self.get_vault_reserves()[0],
+                    self.get_vault_reserves()[1],
+                );
 
-            let exchange_rate = calc_exchange_rate(
-                proportion,
-                market_compute.rate_anchor,
-                market_compute.rate_scalar
-            );
+            let exchange_rate = 
+                calc_exchange_rate(
+                    proportion,
+                    market_compute.rate_anchor,
+                    market_compute.rate_scalar
+                );
 
             // exchangeRate >= 1 so its ln >= 0
             let ln_exchange_rate = 
@@ -1089,17 +1423,40 @@ mod yield_amm {
         }
 
         pub fn time_to_expiry(&self) -> i64 {
-            self.market_state.maturity_date.to_instant().seconds_since_unix_epoch 
+            self.market_info.maturity_date.to_instant().seconds_since_unix_epoch 
                 - Clock::current_time_rounded_to_seconds().seconds_since_unix_epoch
         }
 
         /// Checks whether maturity has lapsed
         pub fn check_maturity(&self) -> bool {
             Clock::current_time_comparison(
-                self.market_state.maturity_date.to_instant(), 
+                self.market_info.maturity_date.to_instant(), 
                 TimePrecision::Second, 
                 TimeComparisonOperator::Gte
             )
+        }
+
+        fn assert_market_not_expired(&self) {
+            assert_ne!(
+                self.check_maturity(), 
+                true, 
+                "Market has reached its maturity"
+            )
+        }
+
+        fn assert_market_status(&self) {
+            assert_eq!(
+                self.market_is_active, 
+                true, 
+                "Market is not active"
+            )
+        }
+
+        pub fn change_market_status(
+            &mut self,
+            status: bool,
+        ) {
+            self.market_is_active = status;
         }
     }
 }

@@ -3,7 +3,7 @@ use scrypto::prelude::*;
 use scrypto_math::*;
 
 // 365 days in sconds
-const PERIOD_SIZE: Decimal = dec!(31536000);
+pub const PERIOD_SIZE: Decimal = dec!(31536000);
 
     /// Calculates the exchange rate based on the proportion of the trade, 
     /// rate scalar, and rate anchor.
@@ -24,7 +24,6 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
                     result.checked_add(rate_anchor)
                 )
                 .unwrap();
-
 
         // Exchange rate represents how many assets you get for 1 PT
         // If exchange rate < 1:
@@ -85,6 +84,35 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
     /// easier apparently.
     /// Why does it need to be precise decimal?
     /// Proportion which unwraps to a None when taking natural log may indicate illiquid market.
+    /// The logit function (ln(p/(1-p))) is used for several important reasons:
+
+    // Bounded Range:
+
+    // The proportion p is bounded between 0 and 1 (0% to 100% of the pool)
+    // The logit function maps this bounded range (0,1) to the entire real number line (-∞,+∞)
+    // This ensures that the exchange rate can respond smoothly to any possible proportion of assets in the pool
+    // Symmetry:
+
+    // The logit function is symmetric around p=0.5, meaning it treats buying and selling with equal sensitivity
+    // When p approaches 0, ln(p/(1-p)) approaches -∞
+    // When p approaches 1, ln(p/(1-p)) approaches +∞
+    // This creates a natural price discovery mechanism
+    // Capital Efficiency:
+
+    // As mentioned in section 1.3.1 of the whitepaper, this curve shape (derived from the logit function) provides better capital efficiency
+    // The slope becomes steeper at the extremes (when p approaches 0 or 1), which helps prevent the pool from being drained
+    // The gentler slope in the middle range allows for more efficient trading with less slippage
+    // Interest Rate Relationship:
+
+    // The logit transformation helps establish a clear relationship between the proportion of assets and the implied interest rate
+    // When combined with rateScalar and rateAnchor, it creates a predictable and manageable interest rate curve
+    // This is crucial for the "interest rate continuity" described in section 3.4.1 of the whitepaper
+    // This transformation is essential to the Notional AMM model's ability to:
+
+    // Maintain stable prices in normal trading conditions (middle of the curve)
+    // Prevent pool drainage (extreme ends of the curve)
+    // Create a smooth relationship between pool proportions and interest rates
+    // Enable efficient capital utilization across the trading range
     pub fn log_proportion(
         proportion: Decimal
     ) -> PreciseDecimal {
@@ -140,16 +168,19 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
         //     "Proportion must be less than 1 to maintain valid pool state"
         // );
 
-        let logit_p: PreciseDecimal = 
+        let logit_p = 
             proportion
             .checked_div(
-                PreciseDecimal::ONE
+                Decimal::ONE
                 .checked_sub(proportion)
                 .unwrap()
             )
             .unwrap();
 
-        return logit_p.ln().unwrap()
+        return 
+            PreciseDecimal::from(logit_p)
+                .ln()
+                .unwrap()
     }
 
     /// Calculates the scalar rate as a function of time to maturity.
@@ -171,6 +202,7 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
         .unwrap();
 
         // Check if rate scalar is less then 0
+        // Need to understand what scenarios may lead to rate scalar being negative.
         assert!(rate_scalar >= Decimal::ZERO);
 
         return rate_scalar

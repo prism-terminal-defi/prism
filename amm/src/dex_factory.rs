@@ -142,7 +142,12 @@ pub mod yield_amm_factory {
             &mut self,
             underlying_asset: FungibleBucket,
             principal_token: FungibleBucket
-        ) -> (Bucket, Option<Bucket>) {
+        ) -> (
+            Bucket, 
+            Option<Bucket>, 
+            // FungibleBucket, 
+            // FungibleBucket
+        ) {
 
             // Check whether PT is paired with underlying asset
 
@@ -224,7 +229,7 @@ pub mod yield_amm_factory {
             &mut self,
             yield_token: NonFungibleBucket,
             amount_yt_to_swap_in: Decimal,
-        ) -> (FungibleBucket, Option<NonFungibleBucket>) {
+        ) -> (FungibleBucket, Option<NonFungibleBucket>, Option<FungibleBucket>) {
 
             let underlying_asset = 
                 self.get_tokenizer_metadata(yield_token.resource_address());
