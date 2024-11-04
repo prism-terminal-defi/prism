@@ -238,7 +238,7 @@ pub mod yield_amm_factory {
             self.yield_amm_map.get_mut(&underlying_asset).unwrap();
 
             // Remember to switch this
-            yield_amm.swap_exact_yt_for_lsu2(
+            yield_amm.swap_exact_yt_for_lsu(
                 yield_token, 
                 amount_yt_to_swap_in
             )

@@ -17,7 +17,21 @@ pub struct RemoveLiquidityEvent {
     
 }
 
-#[derive(ScryptoSbor, ScryptoEvent, Debug, PartialEq, Eq)]
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
 pub struct SwapEvent {
-    
+    pub timestamp: UtcDateTime,
+    pub market_pair: (ResourceAddress, ResourceAddress),
+    pub size: Decimal,
+    pub side: String,
+    // price
+    pub exchange_rate_before_fees: PreciseDecimal,
+    pub exchange_rate_after_fees: Decimal,
+    pub reserve_fees: PreciseDecimal,
+    pub trading_fees: PreciseDecimal,
+    pub total_fees: PreciseDecimal,
+}
+
+#[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
+pub struct MarketUpdate {
+    timestamp: UtcDateTime,
 }
