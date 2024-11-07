@@ -175,7 +175,7 @@ pub mod yield_amm_factory {
             todo!()
         }
 
-        pub fn swap_exact_pt_for_lsu(
+        pub fn swap_exact_pt_for_asset(
             &mut self,
             principal_token: FungibleBucket
         ) -> FungibleBucket {
@@ -188,10 +188,10 @@ pub mod yield_amm_factory {
                 self.yield_amm_map.get_mut(&underlying_asset).unwrap();
 
 
-            yield_amm.swap_exact_pt_for_lsu(principal_token)
+            yield_amm.swap_exact_pt_for_asset(principal_token)
         }
 
-        pub fn swap_exact_lsu_for_pt(
+        pub fn swap_exact_asset_for_pt(
             &mut self,
             mut underlying_asset: FungibleBucket,
             guess_pt_amount: Decimal
@@ -202,13 +202,13 @@ pub mod yield_amm_factory {
                     .get_mut(&underlying_asset.resource_address())
                     .unwrap();
 
-            yield_amm.swap_exact_lsu_for_pt(
+            yield_amm.swap_exact_asset_for_pt(
                 underlying_asset, 
                 guess_pt_amount
             )
         }
 
-        pub fn swap_exact_lsu_for_yt(
+        pub fn swap_exact_asset_for_yt(
             &mut self,
             mut underlying_asset: FungibleBucket,
             guess_amount_to_swap_in: Decimal
@@ -219,13 +219,13 @@ pub mod yield_amm_factory {
                     .get_mut(&underlying_asset.resource_address())
                     .unwrap();
 
-            yield_amm.swap_exact_lsu_for_yt(
+            yield_amm.swap_exact_asset_for_yt(
                 underlying_asset, 
                 guess_amount_to_swap_in
             )
         }
 
-        pub fn swap_exact_yt_for_lsu(
+        pub fn swap_exact_yt_for_asset(
             &mut self,
             yield_token: NonFungibleBucket,
             amount_yt_to_swap_in: Decimal,
@@ -238,7 +238,7 @@ pub mod yield_amm_factory {
             self.yield_amm_map.get_mut(&underlying_asset).unwrap();
 
             // Remember to switch this
-            yield_amm.swap_exact_yt_for_lsu(
+            yield_amm.swap_exact_yt_for_asset(
                 yield_token, 
                 amount_yt_to_swap_in
             )

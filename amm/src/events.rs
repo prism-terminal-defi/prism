@@ -29,6 +29,7 @@ pub struct SwapEvent {
     pub reserve_fees: PreciseDecimal,
     pub trading_fees: PreciseDecimal,
     pub total_fees: PreciseDecimal,
+    pub new_implied_rate: PreciseDecimal,
 }
 
 #[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]

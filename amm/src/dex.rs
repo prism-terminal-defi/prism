@@ -11,7 +11,7 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
 #[events(InstantiateAMMEvent, SwapEvent)]
 mod yield_amm {
     // The associated YieldTokenizer package and component which is used to verify associated PT, YT, and 
-    // LSU asset. It is also used to perform YT <---> LSU swaps.
+    // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
         "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         YieldTokenizer {
@@ -49,10 +49,10 @@ mod yield_amm {
             get_market_state => PUBLIC;
             add_liquidity => PUBLIC;
             remove_liquidity => PUBLIC;
-            swap_exact_pt_for_lsu => PUBLIC;
-            swap_exact_lsu_for_pt => PUBLIC;
-            swap_exact_lsu_for_yt => PUBLIC;
-            swap_exact_yt_for_lsu => PUBLIC;
+            swap_exact_pt_for_asset => PUBLIC;
+            swap_exact_asset_for_pt => PUBLIC;
+            swap_exact_asset_for_yt => PUBLIC;
+            swap_exact_yt_for_asset => PUBLIC;
             compute_market => PUBLIC;
             time_to_expiry => PUBLIC;
             check_maturity => PUBLIC;
@@ -260,7 +260,7 @@ mod yield_amm {
         /// 
         /// # Arguments
         ///
-        /// * `lsu_tokens`: [`FungibleBucket`] - A fungible bucket of LSU token supply.
+        /// * `asset_buckets`: [`FungibleBucket`] - A fungible bucket of Asset token supply.
         /// * `principal_token`: [`FungibleBucket`] - A fungible bucket of principal token supply.
         ///
         /// # Returns
@@ -299,7 +299,7 @@ mod yield_amm {
         /// # Returns
         /// 
         /// * [`Bucket`] - A bucket of PT.
-        /// * [`Bucket`] - A bucket of LSU tokens.
+        /// * [`Bucket`] - A bucket of Asset tokens.
         pub fn remove_liquidity(
             &mut self, 
             pool_units: FungibleBucket
@@ -308,17 +308,17 @@ mod yield_amm {
                 .redeem(pool_units.into())
         }
 
-        /// Swaps the given PT for LSU tokens.
+        /// Swaps the given PT for Asset tokens.
         /// 
         /// # Arguments
         ///
         /// * `principal_token`: [`FungibleBucket`] - A fungible bucket of PT tokens to
-        /// to swap for LSU. 
+        /// to swap for Asset. 
         ///
         /// # Returns
         ///
-        /// * [`FungibleBucket`] - A bucket of LSU tokens.
-        pub fn swap_exact_pt_for_lsu(
+        /// * [`FungibleBucket`] - A bucket of Asset tokens.
+        pub fn swap_exact_pt_for_asset(
             &mut self, 
             principal_token: FungibleBucket
         ) -> FungibleBucket {
@@ -331,30 +331,30 @@ mod yield_amm {
                 self.market_info.pt_address
             );
             
-            info!("[swap_exact_pt_for_lsu] Calculating state of the market...");
+            info!("[swap_exact_pt_for_asset] Calculating state of the market...");
             
             let market_state = self.get_market_state();
             
             let time_to_expiry = self.time_to_expiry();
-            info!("[swap_exact_lsu_for_pt] Time to expiry: {:?}", time_to_expiry);
+            info!("[swap_exact_asset_for_pt] Time to expiry: {:?}", time_to_expiry);
             
             info!(
-                "[swap_exact_pt_for_lsu] Market State: {:?}", 
+                "[swap_exact_pt_for_asset] Market State: {:?}", 
                 market_state
             );
 
             // Calcs the rate scalar and rate anchor with the current market state
-            info!("[swap_exact_pt_for_lsu] Calculating market compute...");
+            info!("[swap_exact_pt_for_asset] Calculating market compute...");
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
                     time_to_expiry
                 );
 
-            info!("[swap_exact_pt_for_lsu] Calculating trade...");
+            info!("[swap_exact_pt_for_asset] Calculating trade...");
             // Calcs the the swap
             let (
-                lsu_to_account,
+                asset_to_account,
                 pre_fee_exchange_rate,
                 total_fees,
                 net_asset_fee_to_reserve,
@@ -367,17 +367,17 @@ mod yield_amm {
                     );  
 
             info!(
-                "[swap_exact_pt_for_lsu] Net LSU to Return: {:?}", 
-                lsu_to_account
+                "[swap_exact_pt_for_asset] Net Asset to Return: {:?}", 
+                asset_to_account
             );
 
             let all_in_exchange_rate = 
                 principal_token.amount()
-                .checked_div(lsu_to_account)
+                .checked_div(asset_to_account)
                 .unwrap();
 
             info!(
-                "[swap_exact_pt_for_lsu] All-in Exchange rate: {:?}", 
+                "[swap_exact_pt_for_asset] All-in Exchange rate: {:?}", 
                 all_in_exchange_rate
             );
 
@@ -385,15 +385,15 @@ mod yield_amm {
 
             self.pool_component.protected_deposit(principal_token.into());
 
-            let owed_lsu_bucket = self.pool_component.protected_withdraw(
+            let owed_asset_bucket = self.pool_component.protected_withdraw(
                 self.market_info.underlying_asset_address, 
-                lsu_to_account, 
+                asset_to_account, 
                 WithdrawStrategy::Rounded(RoundingMode::ToZero)
             );
 
-            info!("[swap_exact_pt_for_lsu] Updating implied rate...");
+            info!("[swap_exact_pt_for_asset] Updating implied rate...");
             info!(
-                "[swap_exact_pt_for_lsu] Implied Rate Before Trade: {:?}",
+                "[swap_exact_pt_for_asset] Implied Rate Before Trade: {:?}",
                 self.market_state.last_ln_implied_rate.exp().unwrap()
             );
 
@@ -412,13 +412,13 @@ mod yield_amm {
                 );
 
             info!(
-                "[swap_exact_pt_for_lsu] Implied Rate After Trade: {:?}",
+                "[swap_exact_pt_for_asset] Implied Rate After Trade: {:?}",
                 new_implied_rate.exp().unwrap()
             );
 
             // What does it mean when implied rate decrease/increase after a trade?
             info!(
-                "[swap_exact_pt_for_lsu] New Implied Rate Movement Decrease: {:?}",
+                "[swap_exact_pt_for_asset] New Implied Rate Movement Decrease: {:?}",
                 self.market_state.last_ln_implied_rate
                 .checked_sub(new_implied_rate)
                 .unwrap()
@@ -444,18 +444,19 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
 
             //-------------------------EVENTS-------------------------//
-            return owed_lsu_bucket.as_fungible()
+            return owed_asset_bucket.as_fungible()
         }
 
-        /// Swaps the given PT for LSU tokens.
+        /// Swaps the given PT for Asset tokens.
         ///
         /// # Arguments
         ///
-        /// * `lsu_token`: [`FungibleBucket`] - A fungible bucket of LSU tokens to
+        /// * `asset_bucket`: [`FungibleBucket`] - A fungible bucket of Asset tokens to
         /// swap for PT.
         /// * `desired_pt_amount`: [`Decimal`] - The amount of PT the user
         /// wants.
@@ -463,23 +464,23 @@ mod yield_amm {
         /// # Returns
         ///
         /// * [`FungibleBucket`] - A bucket of PT.
-        /// * [`FungibleBucket`] - A bucket of any remaining LSU tokens.
+        /// * [`FungibleBucket`] - A bucket of any remaining Asset tokens.
         /// 
         /// Notes:
         /// I believe it needs to be calculated this way because formula for trades is easier 
-        /// based on PT being swapped in/ou but not for LSUs.
+        /// based on PT being swapped in/ou but not for Assets.
         /// 
-        /// Challengers have room for improvements to approximate required LSU better such that it equals
-        /// the LSU sent in. 
-        pub fn swap_exact_lsu_for_pt(
+        /// Challengers have room for improvements to approximate required Asset better such that it equals
+        /// the Asset sent in. 
+        pub fn swap_exact_asset_for_pt(
             &mut self, 
-            mut lsu_token: FungibleBucket, 
+            mut asset_bucket: FungibleBucket, 
             desired_pt_amount: Decimal
         ) -> (FungibleBucket, FungibleBucket) {
             self.assert_market_not_expired();
             
             assert_eq!(
-                lsu_token.resource_address(), 
+                asset_bucket.resource_address(), 
                 self.market_info.underlying_asset_address
             );
 
@@ -522,7 +523,7 @@ mod yield_amm {
             // The price impact is solely from their trade size
             // Slippage calculations are reliable
 
-            info!("[swap_exact_lsu_for_pt] Calculating market compute...");
+            info!("[swap_exact_asset_for_pt] Calculating market compute...");
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
@@ -530,9 +531,9 @@ mod yield_amm {
                 );
 
             // Calcs the swap
-            info!("[swap_exact_lsu_for_pt] Calculating trade...");
+            info!("[swap_exact_asset_for_pt] Calculating trade...");
             let (
-                required_lsu,
+                required_asset,
                 pre_fee_exchange_rate,
                 total_fees,
                 net_asset_fee_to_reserve,
@@ -544,37 +545,37 @@ mod yield_amm {
                         &market_compute,
                     );
 
-            // Assert the amount of LSU sent in is at least equal to the required
-            // LSU needed for the desired PT amount.
+            // Assert the amount of Asset sent in is at least equal to the required
+            // Asset needed for the desired PT amount.
             assert!(
-                lsu_token.amount() >= required_lsu,
+                asset_bucket.amount() >= required_asset,
                 "Asset amount: {:?}
                 Required asset amount: {:?}",
-                lsu_token.amount(),
-                required_lsu
+                asset_bucket.amount(),
+                required_asset
             );
 
             let all_in_exchange_rate =
                 desired_pt_amount
-                .checked_div(required_lsu)
+                .checked_div(required_asset)
                 .unwrap();
 
             info!(
-                "[swap_exact_lsu_for_pt] All-in Exchange rate: {:?}", 
-                desired_pt_amount.checked_div(required_lsu).unwrap()
+                "[swap_exact_asset_for_pt] All-in Exchange rate: {:?}", 
+                desired_pt_amount.checked_div(required_asset).unwrap()
             );
 
-            // Only need to take the required LSU, return the rest.
-            let required_lsu_bucket = lsu_token.take(required_lsu);
+            // Only need to take the required Asset, return the rest.
+            let required_asset_bucket = asset_bucket.take(required_asset);
 
             info!(
-                "[swap_exact_lsu_for_pt] Required LSU: {:?}", 
-                required_lsu_bucket.amount()
+                "[swap_exact_asset_for_pt] Required Asset: {:?}", 
+                required_asset_bucket.amount()
             );
 
             //----------------------STATE CHANGES----------------------//
             
-            self.pool_component.protected_deposit(required_lsu_bucket.into());
+            self.pool_component.protected_deposit(required_asset_bucket.into());
 
             
             let owed_pt_bucket = 
@@ -585,13 +586,13 @@ mod yield_amm {
                 );
 
             // Saves the new implied rate of the trade.
-            info!("[swap_exact_yt_for_lsu] Updating implied rate...");
+            info!("[swap_exact_yt_for_asset] Updating implied rate...");
             info!(
-                "[swap_exact_yt_for_lsu] Implied Rate Before Trade: {:?}",
+                "[swap_exact_yt_for_asset] Implied Rate Before Trade: {:?}",
                 self.market_state.last_ln_implied_rate.exp().unwrap()
             );
 
-            info!("[swap_exact_yt_for_lsu] 
+            info!("[swap_exact_yt_for_asset] 
                     New Total PT: {:?}
                     New Total Asset: {:?}",
                     market_state.total_pt,
@@ -606,7 +607,7 @@ mod yield_amm {
                 );
 
             info!(
-                "[swap_exact_yt_for_lsu] Implied Rate After Trade: {:?}",
+                "[swap_exact_yt_for_asset] Implied Rate After Trade: {:?}",
                 new_implied_rate.exp().unwrap()
             );
 
@@ -629,36 +630,33 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
 
             //-------------------------EVENTS-------------------------//
 
-            info!("[swap_exact_lsu_for_pt] Owed PT: {:?}", owed_pt_bucket.amount());
-            info!("[swap_exact_lsu_for_pt] Remaining LSU: {:?}", lsu_token.amount());
+            info!("[swap_exact_asset_for_pt] Owed PT: {:?}", owed_pt_bucket.amount());
+            info!("[swap_exact_asset_for_pt] Remaining Asset: {:?}", asset_bucket.amount());
 
-            return (owed_pt_bucket.as_fungible(), lsu_token)
+            return (owed_pt_bucket.as_fungible(), asset_bucket)
         }   
 
-        /// Swaps the given LSU token for YT (Buying YT)
+        /// Swaps the given Asset token for YT (Buying YT)
         /// 
         /// # Arguments
         ///
-        /// * `bucket`: [`FungibleBucket`] - A fungible bucket of LSU tokens to
+        /// * `bucket`: [`FungibleBucket`] - A fungible bucket of Asset tokens to
         /// swap for YT.
         ///
         /// # Returns
         ///
         /// * [`FungibleBucket`] - A bucket of YT.
         /// 
-        /// Note: In practice, the way an amount of YT can be determined given an
-        /// LSU is by calculating the price of PT and YT based on P(PT) + P(YT) = LSU
-        /// relationship. However, doing so require complex approximation algorithm
-        /// which isn't covered in this implementation.
-        /// Note: Some small discrepencies with result from guesses, need to handle.
-        pub fn swap_exact_lsu_for_yt(
+        /// Note:
+        pub fn swap_exact_asset_for_yt(
             &mut self, 
-            mut lsu_token: FungibleBucket,
+            mut asset_bucket: FungibleBucket,
             guess_amount_to_swap_in: Decimal,
         ) 
         -> NonFungibleBucket 
@@ -666,14 +664,12 @@ mod yield_amm {
             self.assert_market_not_expired();
 
             assert_eq!(
-                lsu_token.resource_address(),
+                asset_bucket.resource_address(),
                 self.market_info.underlying_asset_address
             );
 
-            // There would be an algorithm to estimate the PT that can be
-            // swapped for LSU to determine the price of PT as this would
-            // determine the amount of LSU one can borrow and pay back.
-            // let est_max_pt_in = dec!(0); 
+            let asset_amount = asset_bucket.amount();
+
             let time_to_expiry = self.time_to_expiry();
             let market_state = self.get_market_state();
             let market_compute = self.compute_market(
@@ -682,15 +678,17 @@ mod yield_amm {
                 time_to_expiry
             );
 
-            let required_lsu_to_borrow =
+            info!("[swap_exact_asset_for_yt] Guess PT In: {:?}", guess_amount_to_swap_in);
+
+            let required_asset_to_borrow =
                 guess_amount_to_swap_in
-                .checked_sub(lsu_token.amount())
+                .checked_sub(asset_bucket.amount())
                 .unwrap(); 
 
-            info!("[swap_exact_lsu_for_yt] Required LSU to borrow: {:?}", required_lsu_to_borrow);
+            info!("[swap_exact_asset_for_yt] Required Asset to borrow: {:?}", required_asset_to_borrow);
             
             let (
-                asset_to_swap_amount,
+                asset_to_borrow,
                 pre_fee_exchange_rate,
                 total_fees,
                 net_asset_fee_to_reserve,
@@ -702,59 +700,112 @@ mod yield_amm {
                     &market_compute, 
                 );
 
-            info!("[flash_swap] Asset To Borrow Amount: {:?}", asset_to_swap_amount);
+            info!("[flash_swap] Asset To Borrow Amount: {:?}", asset_to_borrow);
             
+            // Not sure or don't remember when asset_to_borrow needs to be >= required_asset_to_borrow
             assert!(
-                asset_to_swap_amount >= required_lsu_to_borrow 
+                asset_to_borrow >= required_asset_to_borrow 
             );
 
             let all_in_exchange_rate =
                 guess_amount_to_swap_in
-                .checked_div(asset_to_swap_amount)
+                .checked_div(asset_to_borrow)
                 .unwrap();
+
+            let all_in_exchange_rate_asset_to_pt = 
+                asset_to_borrow
+                .checked_div(
+                    asset_to_borrow
+                    .checked_add(asset_amount)
+                    .unwrap()
+                )
+                .unwrap();
+        
+            info!(
+                "[swap_exact_asset_for_yt] All-in Exchange Rate of Asset/PT: {:?}",
+                all_in_exchange_rate_asset_to_pt  
+            );
 
             //----------------------STATE CHANGES----------------------//
 
-            let withdrawn_asset = self.pool_component.protected_withdraw(
-                lsu_token.resource_address(), 
-                asset_to_swap_amount, 
-                WithdrawStrategy::Exact
-            )
-            .as_fungible();
+            let asset_to_flash_swap = 
+                self.pool_component.protected_withdraw(
+                    asset_bucket.resource_address(), 
+                    asset_to_borrow,
+                    WithdrawStrategy::Exact
+                )
+                .as_fungible();
 
-            info!("[flash_swap] Withdrawn Asset Amount: {:?}", withdrawn_asset.amount());
+            info!(
+                "[flash_swap] Asset to Flash Swap Amount: {:?}", 
+                asset_to_flash_swap.amount()
+            );
 
-            lsu_token.put(withdrawn_asset);
+            // Combined asset
+            asset_bucket.put(asset_to_flash_swap);
 
-            let (principal_token, yield_token) = 
-                self.yield_tokenizer_component.tokenize_yield(lsu_token);
+            let (
+                pt_to_pay_back, 
+                yt_to_return
+            ) = self.yield_tokenizer_component
+                    .tokenize_yield(asset_bucket);
 
-            info!("[flash_swap] Principal Token Amount: {:?}", principal_token.amount());
+            info!("[flash_swap] Principal Token Amount: {:?}", pt_to_pay_back.amount());
 
             let yield_token_data: YieldTokenData = 
-                yield_token
+                yt_to_return
                 .as_non_fungible()
                 .non_fungible()
                 .data();
+            
+            info!(
+                "[swap_exact_asset_for_yt] YT Amount: {:?}", 
+                yield_token_data.underlying_asset_amount
+            );
+
+            let all_in_exchange_rate_asset_to_yt =
+                asset_amount
+                .checked_div(yield_token_data.underlying_asset_amount)
+                .unwrap();
+            
+            info!(
+                "[swap_exact_asset_for_yt] All-in Exchange Rate of YT/Asset: {:?}",
+                all_in_exchange_rate_asset_to_yt
+            );
 
             info!(
-                "[swap_exact_lsu_for_yt] YT Amount: {:?}", 
-                yield_token_data.underlying_lsu_amount
+                "[swap_exact_asset_for_yt] Combined Exchange Rate: {:?}",
+                all_in_exchange_rate_asset_to_yt
+                .checked_add(all_in_exchange_rate_asset_to_pt)
+                .unwrap()
+            );
+
+            // Potentially remove after testing
+            assert_eq!(
+                all_in_exchange_rate_asset_to_pt
+                .checked_add(all_in_exchange_rate_asset_to_yt)
+                .and_then(
+                    |amount|
+                    amount.checked_round(17, RoundingMode::AwayFromZero)
+                )
+                .unwrap(),
+                Decimal::ONE
             );
 
             assert!(
-                principal_token.amount() >= guess_amount_to_swap_in
+                pt_to_pay_back.amount() >= guess_amount_to_swap_in
             );
 
-            self.pool_component.protected_deposit(principal_token.into());
+            self.pool_component.protected_deposit(pt_to_pay_back.into());
         
-            // Saves the new implied rate of the trade.
-            self.market_state.last_ln_implied_rate = 
+            let new_implied_rate =
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
                     market_state,
                 );
+    
+            self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //----------------------STATE CHANGES----------------------//
 
@@ -773,36 +824,37 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
 
             //-------------------------EVENTS-------------------------//
 
-            return yield_token
+            return yt_to_return
 
         }
         
-        /// Swaps the given YT for LSU tokens (Selling YT):
+        /// Swaps the given YT for Asset tokens (Selling YT):
         ///
         /// 1. Seller sends YT into the swap contract.
         /// 2. Contract borrows an equivalent amount of PT from the pool.
-        /// 3. The YTs and PTs are used to redeem LSU.
-        /// 4. Contract calculates the required LSU to swap back to PT.
-        /// 5. A portion of the LSU is sold to the pool for PT to return the amount from step 2.
-        /// 6. The remaining LSU is sent to the seller.
+        /// 3. The YTs and PTs are used to redeem Asset.
+        /// 4. Contract calculates the required Asset to swap back to PT.
+        /// 5. A portion of the Asset is sold to the pool for PT to return the amount from step 2.
+        /// 6. The remaining Asset is sent to the seller.
         ///
         /// # Arguments
         ///
-        /// * `yield_token`: [`FungibleBucket`] - A fungible bucket of LSU tokens to
+        /// * `yield_token`: [`FungibleBucket`] - A fungible bucket of Asset tokens to
         /// swap for YT.
         /// * `amount_yt_to_swap_in`: [Decimal] - Amount of YT to swap in.
         ///
         /// # Returns
         ///
-        /// * [`FungibleBucket`] - A bucket of LSU.
+        /// * [`FungibleBucket`] - A bucket of Asset.
         /// * [`Option<NonFungibleBucket>`] - A bucket of YT if not all were used.
-        /// * [`Option<FungibleBucket>`] - A bucket of unused LSU.
-        pub fn swap_exact_yt_for_lsu(
+        /// * [`Option<FungibleBucket>`] - A bucket of unused Asset.
+        pub fn swap_exact_yt_for_asset(
             &mut self, 
             yield_token: NonFungibleBucket,
             amount_yt_to_swap_in: Decimal,
@@ -820,35 +872,35 @@ mod yield_amm {
                 self.market_info.yt_address
             );
             
-            // Need to borrow the same amount of PT as YT to redeem LSU
+            // Need to borrow the same amount of PT as YT to redeem Asset
             let data: YieldTokenData = yield_token.non_fungible().data();
-            let underlying_lsu_amount = data.underlying_lsu_amount;
+            let underlying_asset_amount = data.underlying_asset_amount;
             
             assert!(
-                underlying_lsu_amount >= amount_yt_to_swap_in
+                underlying_asset_amount >= amount_yt_to_swap_in
             );
 
             let pt_to_withdraw = amount_yt_to_swap_in;
 
             info!(
-                "[swap_exact_yt_for_lsu] Simulating trade to calculate
-                Required LSU to pay back for withdrawn PT"
+                "[swap_exact_yt_for_asset] Simulating trade to calculate
+                Required Asset to pay back for withdrawn PT"
             );
-            info!("[swap_exact_yt_for_lsu] Calculating state of the market...");
+            info!("[swap_exact_yt_for_asset] Calculating state of the market...");
             let market_state = self.get_market_state();
             let time_to_expiry = self.time_to_expiry();
 
-            info!("[swap_exact_yt_for_lsu] Calculating market compute...");
+            info!("[swap_exact_yt_for_asset] Calculating market compute...");
             let market_compute = 
                 self.compute_market(
                     market_state.clone(),
                     time_to_expiry
                 );
 
-            info!("[swap_exact_yt_for_lsu] Calculating trade...");
+            info!("[swap_exact_yt_for_asset] Calculating trade...");
             // Do we calc_trade before any assets are removed/added?
             let (
-                lsu_owed_for_pt_flash_swap,
+                asset_owed_for_pt_flash_swap,
                 pre_fee_exchange_rate,
                 total_fees,
                 net_asset_fee_to_reserve,
@@ -856,7 +908,7 @@ mod yield_amm {
             ) = self.calc_trade(
                 // Make sure the signs are correct based on direction of the trade
                 // Pretty sure this is positive as we are intending to withdraw PT
-                // And figuring out how much LSU is required for the PT.
+                // And figuring out how much Asset is required for the PT.
                     pt_to_withdraw,
                     time_to_expiry,
                     &market_state,
@@ -864,26 +916,26 @@ mod yield_amm {
                 );
 
             info!(
-                "[swap_exact_yt_for_lsu] 
-                Required LSU to pay back (Net LSU Returned): {:?}
+                "[swap_exact_yt_for_asset] 
+                Required Asset to pay back (Net Asset Returned): {:?}
                 for desired PT amount: {:?}",
-                lsu_owed_for_pt_flash_swap,
+                asset_owed_for_pt_flash_swap,
                 pt_to_withdraw
             );
 
             let all_in_exchange_rate =
-                lsu_owed_for_pt_flash_swap
+                asset_owed_for_pt_flash_swap
                 .checked_div(pt_to_withdraw)
                 .unwrap();
 
             info!(
-                "[swap_exact_yt_for_lsu] All-in Exchange rate of LSU/PT: {:?}",
-                lsu_owed_for_pt_flash_swap.checked_div(pt_to_withdraw).unwrap()
+                "[swap_exact_yt_for_asset] All-in Exchange rate of Asset/PT: {:?}",
+                asset_owed_for_pt_flash_swap.checked_div(pt_to_withdraw).unwrap()
             );
 
             // *                    STATE CHANGES                       * //
 
-            info!("[swap_exact_yt_for_lsu] Withdrawing desired PT to combine with YT...");
+            info!("[swap_exact_yt_for_asset] Withdrawing desired PT to combine with YT...");
             let withdrawn_pt = 
                 self.pool_component.protected_withdraw(
                     self.market_info.pt_address, 
@@ -891,10 +943,10 @@ mod yield_amm {
                     WithdrawStrategy::Exact
                 );
 
-            info!("[swap_exact_yt_for_lsu] Redeeming LSU from PT & SY...");    
-            // Combine PT and YT to redeem LSU
+            info!("[swap_exact_yt_for_asset] Redeeming Asset from PT & SY...");    
+            // Combine PT and YT to redeem Asset
             let (
-                mut lsu_token, 
+                mut asset_bucket, 
                 optional_yt_bucket,
                 optional_pt_bucket,
             ) = self.yield_tokenizer_component
@@ -904,45 +956,45 @@ mod yield_amm {
                     );
             
             info!(
-                "[swap_exact_yt_for_lsu] LSU Redeemed: {:?}",
-                lsu_token.amount()
+                "[swap_exact_yt_for_asset] Asset Redeemed: {:?}",
+                asset_bucket.amount()
             );
 
             
             info!(
-                "[swap_exact_yt_for_lsu] Excess YT: {:?}",
+                "[swap_exact_yt_for_asset] Excess YT: {:?}",
                 optional_yt_bucket.as_ref().map(|bucket| bucket.amount().clone())
             );
             
             info!(
-                "[swap_exact_yt_for_lsu] Excess PT: {:?}",
+                "[swap_exact_yt_for_asset] Excess PT: {:?}",
                 optional_pt_bucket.as_ref().map(|bucket| bucket.amount().clone())
             );
             
 
-            // Do we need assertion here to make sure lsu token received is greater than lsu owed?
-            // let lsu_owed_back_to_pool = 
-            //     lsu_token
+            // Do we need assertion here to make sure asset token received is greater than asset owed?
+            // let asset_owed_back_to_pool = 
+            //     asset_bucket
             //     .amount()
-            //     .checked_sub(lsu_owed_for_pt_flash_swap)
+            //     .checked_sub(asset_owed_for_pt_flash_swap)
             //     .unwrap();
 
-            // Can LSU redeemed be less than LSU owed?
-            let lsu_owed = 
-                lsu_token
-                .take(lsu_owed_for_pt_flash_swap);
+            // Can Asset redeemed be less than Asset owed?
+            let asset_owed = 
+                asset_bucket
+                .take(asset_owed_for_pt_flash_swap);
 
-            assert_eq!(lsu_owed.amount(), lsu_owed_for_pt_flash_swap);
+            assert_eq!(asset_owed.amount(), asset_owed_for_pt_flash_swap);
 
-            self.pool_component.protected_deposit(lsu_owed.into());
+            self.pool_component.protected_deposit(asset_owed.into());
 
-            info!("[swap_exact_yt_for_lsu] Updating implied rate...");
+            info!("[swap_exact_yt_for_asset] Updating implied rate...");
             info!(
-                "[swap_exact_yt_for_lsu] Implied Rate Before Trade: {:?}",
+                "[swap_exact_yt_for_asset] Implied Rate Before Trade: {:?}",
                 self.market_state.last_ln_implied_rate
             );
 
-            info!("[swap_exact_yt_for_lsu] 
+            info!("[swap_exact_yt_for_asset] 
                     New Total PT: {:?}
                     New Total Asset: {:?}",
                     market_state.total_pt,
@@ -958,12 +1010,12 @@ mod yield_amm {
                 );
 
             info!(
-                "[swap_exact_yt_for_lsu] Implied Rate After Trade: {:?}",
+                "[swap_exact_yt_for_asset] Implied Rate After Trade: {:?}",
                 new_implied_rate
             );
 
             info!(
-                "[swap_exact_yt_for_lsu] New Implied Rate Movement Decrease: {:?}",
+                "[swap_exact_yt_for_asset] New Implied Rate Movement Decrease: {:?}",
                 self.market_state.last_ln_implied_rate
                 .checked_sub(new_implied_rate)
                 .unwrap()
@@ -989,22 +1041,23 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
 
             //-------------------------EVENTS-------------------------//
 
             info!(
-                "[swap_exact_yt_for_lsu] LSU Returned: {:?}", 
-                lsu_token.amount()
+                "[swap_exact_yt_for_asset] Asset Returned: {:?}", 
+                asset_bucket.amount()
             );
 
             info!(
-                "[swap_exact_yt_for_lsu] All-in Exchange rate for LSU/YT: {:?}", 
-                lsu_token.amount().checked_div(amount_yt_to_swap_in).unwrap()
+                "[swap_exact_yt_for_asset] All-in Exchange rate for Asset/YT: {:?}", 
+                asset_bucket.amount().checked_div(amount_yt_to_swap_in).unwrap()
             );
 
-            return (lsu_token, optional_yt_bucket, optional_pt_bucket)
+            return (asset_bucket, optional_yt_bucket, optional_pt_bucket)
         }
 
         pub fn compute_market(
@@ -1063,6 +1116,9 @@ mod yield_amm {
             PreciseDecimal,
             PreciseDecimal,
          ) {
+
+            let resource_divisibility = self.get_resource_divisibility();
+
             let proportion = 
                 calc_proportion(
                     net_pt_amount,
@@ -1094,6 +1150,13 @@ mod yield_amm {
                     |amount|
                     amount.checked_neg()
                 )
+                .and_then(
+                    |amount|
+                    amount.checked_round(
+                        resource_divisibility, 
+                        RoundingMode::AwayFromZero
+                    )
+                )
                 .unwrap();
 
             info!(
@@ -1121,6 +1184,13 @@ mod yield_amm {
             let net_asset_fee_to_reserve =
                 total_fees
                 .checked_mul(self.market_fee.reserve_fee_percent)
+                .and_then(
+                    |amount|
+                    amount.checked_round(
+                        resource_divisibility, 
+                        RoundingMode::AwayFromZero
+                    )
+                )
                 .unwrap();
 
             info!(
@@ -1137,39 +1207,61 @@ mod yield_amm {
             let trading_fees = 
                 total_fees
                 .checked_sub(net_asset_fee_to_reserve)
+                .and_then(
+                    |amount|
+                    amount.checked_round(
+                        resource_divisibility, 
+                        RoundingMode::AwayFromZero
+                    )
+                )
                 .unwrap();
 
             info!("[Calc_trade] Trading Fee: {:?}", trading_fees);
 
             let net_amount = 
-            // If this is [swap_exact_pt_to_lsu] then pre_fee_lsu_to_account is negative and
-            // fee is positive so it actually adds to the net_lsu_to_account.
+            // If this is [swap_exact_pt_to_asset] then pre_fee_asset_to_account is negative and
+            // fee is positive so it actually adds to the net_asset_to_account.
                 pre_fee_amount
                 .checked_sub(trading_fees)
+                .and_then(
+                    |amount|
+                    amount.checked_round(
+                        resource_divisibility, 
+                        RoundingMode::AwayFromZero
+                    )
+                )
                 .unwrap();
-
-            info!(
-                "[calc_trade] 
-                Amount to Return After Trading Fees: {:?}", 
-                net_amount
-            );
 
             // Net amount can be negative depending on direciton of the trade.
             // However, we want to have net amount to be positive to be able to 
             // perform the asset swap.
             let net_amount = if net_amount < PreciseDecimal::ZERO {
-                // LSU ---> PT
-                info!("[calc_trade] Trade Direction: LSU ---> PT");
+                // Asset ---> PT
+                info!("[calc_trade] Trade Direction: Asset ---> PT");
                 net_amount
                 .checked_add(net_asset_fee_to_reserve)
                 .and_then(|result| result.checked_abs())
+                .and_then(
+                    |amount|
+                    amount.checked_round(
+                        resource_divisibility, 
+                        RoundingMode::AwayFromZero
+                    )
+                )
                 .unwrap()
             
             } else {
-                // PT ---> LSU
-                info!("[calc_trade] Trade Direction: PT ---> LSU");
+                // PT ---> Asset
+                info!("[calc_trade] Trade Direction: PT ---> Asset");
                 net_amount
                 .checked_sub(net_asset_fee_to_reserve)
+                .and_then(
+                    |amount|
+                    amount.checked_round(
+                        resource_divisibility, 
+                        RoundingMode::AwayFromZero
+                    )
+                )
                 .unwrap()
             };
 
@@ -1177,6 +1269,13 @@ mod yield_amm {
                 Decimal::try_from(net_amount)
                 .ok()
                 .unwrap();
+
+            info!(
+                "[calc_trade] 
+                Amount to Return After Fees: {:?}", 
+                net_amount
+            );
+    
 
             return (
                 net_amount,
@@ -1239,6 +1338,15 @@ mod yield_amm {
                 &current_time_instant
             )
             .ok()
+            .unwrap()
+        }
+
+        fn get_resource_divisibility(&self) -> u8 {
+            ResourceManager::from(
+                self.market_info.underlying_asset_address
+            )
+            .resource_type()
+            .divisibility()
             .unwrap()
         }
 
