@@ -2,13 +2,13 @@ use scrypto::prelude::*;
 use scrypto_math::*;
 use common::structs::*;
 use off_ledger::liquidity_curve::*;
-use crate::events::*;
+// use crate::events::*;
 
 /// 365 days in seconds
 const PERIOD_SIZE: Decimal = dec!(31536000);
 
 #[blueprint]
-#[events(InstantiateAMMEvent, SwapEvent)]
+// #[events(InstantiateAMMEvent, SwapEvent)]
 mod yield_amm {
     // The associated YieldTokenizer package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
@@ -165,12 +165,12 @@ mod yield_amm {
                 reserve_fee_percent: market_fee_input.reserve_fee_percent
             };
 
-            Runtime::emit_event(
-                InstantiateAMMEvent {
-                    market_state: market_state.clone(),
-                    market_fee: market_fee.clone()
-                }
-            );
+            // Runtime::emit_event(
+            //     InstantiateAMMEvent {
+            //         market_state: market_state.clone(),
+            //         market_fee: market_fee.clone()
+            //     }
+            // );
 
             Self {
                 pool_component,
@@ -430,23 +430,23 @@ mod yield_amm {
             //----------------------STATE CHANGES----------------------//
 
             //-------------------------EVENTS-------------------------//
-            Runtime::emit_event(
-                SwapEvent {
-                    timestamp: self.current_time(),
-                    market_pair: (
-                        self.market_info.underlying_asset_address,
-                        self.market_info.pt_address 
-                    ),
-                    size: pt_amount_in,
-                    side: String::from("Sell"),
-                    exchange_rate_before_fees: pre_fee_exchange_rate,
-                    exchange_rate_after_fees: all_in_exchange_rate,
-                    reserve_fees: net_asset_fee_to_reserve,
-                    trading_fees,
-                    total_fees,
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
-                }
-            );
+            // Runtime::emit_event(
+            //     SwapEvent {
+            //         timestamp: self.current_time(),
+            //         market_pair: (
+            //             self.market_info.underlying_asset_address,
+            //             self.market_info.pt_address 
+            //         ),
+            //         size: pt_amount_in,
+            //         side: String::from("Sell"),
+            //         exchange_rate_before_fees: pre_fee_exchange_rate,
+            //         exchange_rate_after_fees: all_in_exchange_rate,
+            //         reserve_fees: net_asset_fee_to_reserve,
+            //         trading_fees,
+            //         total_fees,
+            //         new_implied_rate: new_implied_rate.exp().unwrap(),
+            //     }
+            // );
 
             //-------------------------EVENTS-------------------------//
             return owed_asset_bucket.as_fungible()
@@ -616,23 +616,23 @@ mod yield_amm {
             //----------------------STATE CHANGES----------------------//
 
             //-------------------------EVENTS-------------------------//
-            Runtime::emit_event(
-                SwapEvent {
-                    timestamp: self.current_time(),
-                    market_pair: (
-                        self.market_info.underlying_asset_address,
-                        self.market_info.pt_address 
-                    ),
-                    size: desired_pt_amount,
-                    side: String::from("Buy"),
-                    exchange_rate_before_fees: pre_fee_exchange_rate,
-                    exchange_rate_after_fees: all_in_exchange_rate,
-                    reserve_fees: net_asset_fee_to_reserve,
-                    trading_fees,
-                    total_fees,
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
-                }
-            );
+            // Runtime::emit_event(
+            //     SwapEvent {
+            //         timestamp: self.current_time(),
+            //         market_pair: (
+            //             self.market_info.underlying_asset_address,
+            //             self.market_info.pt_address 
+            //         ),
+            //         size: desired_pt_amount,
+            //         side: String::from("Buy"),
+            //         exchange_rate_before_fees: pre_fee_exchange_rate,
+            //         exchange_rate_after_fees: all_in_exchange_rate,
+            //         reserve_fees: net_asset_fee_to_reserve,
+            //         trading_fees,
+            //         total_fees,
+            //         new_implied_rate: new_implied_rate.exp().unwrap(),
+            //     }
+            // );
 
             //-------------------------EVENTS-------------------------//
 
@@ -810,23 +810,23 @@ mod yield_amm {
             //----------------------STATE CHANGES----------------------//
 
             //-------------------------EVENTS-------------------------//
-            Runtime::emit_event(
-                SwapEvent {
-                    timestamp: self.current_time(),
-                    market_pair: (
-                        self.market_info.underlying_asset_address,
-                        self.market_info.yt_address 
-                    ),
-                    size: guess_amount_to_swap_in,
-                    side: String::from("Buy"),
-                    exchange_rate_before_fees: pre_fee_exchange_rate,
-                    exchange_rate_after_fees: all_in_exchange_rate,
-                    reserve_fees: net_asset_fee_to_reserve,
-                    trading_fees,
-                    total_fees,
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
-                }
-            );
+            // Runtime::emit_event(
+            //     SwapEvent {
+            //         timestamp: self.current_time(),
+            //         market_pair: (
+            //             self.market_info.underlying_asset_address,
+            //             self.market_info.yt_address 
+            //         ),
+            //         size: guess_amount_to_swap_in,
+            //         side: String::from("Buy"),
+            //         exchange_rate_before_fees: pre_fee_exchange_rate,
+            //         exchange_rate_after_fees: all_in_exchange_rate,
+            //         reserve_fees: net_asset_fee_to_reserve,
+            //         trading_fees,
+            //         total_fees,
+            //         new_implied_rate: new_implied_rate.exp().unwrap(),
+            //     }
+            // );
 
             //-------------------------EVENTS-------------------------//
 
@@ -1027,23 +1027,23 @@ mod yield_amm {
             // *                    STATE CHANGES                       * //
 
             //-------------------------EVENTS-------------------------//
-            Runtime::emit_event(
-                SwapEvent {
-                    timestamp: self.current_time(),
-                    market_pair: (
-                        self.market_info.underlying_asset_address,
-                        self.market_info.yt_address 
-                    ),
-                    size: amount_yt_to_swap_in,
-                    side: String::from("Sell"),
-                    exchange_rate_before_fees: pre_fee_exchange_rate,
-                    exchange_rate_after_fees: all_in_exchange_rate,
-                    reserve_fees: net_asset_fee_to_reserve,
-                    trading_fees,
-                    total_fees,
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
-                }
-            );
+            // Runtime::emit_event(
+            //     SwapEvent {
+            //         timestamp: self.current_time(),
+            //         market_pair: (
+            //             self.market_info.underlying_asset_address,
+            //             self.market_info.yt_address 
+            //         ),
+            //         size: amount_yt_to_swap_in,
+            //         side: String::from("Sell"),
+            //         exchange_rate_before_fees: pre_fee_exchange_rate,
+            //         exchange_rate_after_fees: all_in_exchange_rate,
+            //         reserve_fees: net_asset_fee_to_reserve,
+            //         trading_fees,
+            //         total_fees,
+            //         new_implied_rate: new_implied_rate.exp().unwrap(),
+            //     }
+            // );
 
             //-------------------------EVENTS-------------------------//
 
