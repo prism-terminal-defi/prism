@@ -244,16 +244,11 @@ mod yield_amm {
 
         fn update_market_state(&mut self) {
             let reserves = 
-            self.pool_component.get_vault_amounts();
+                self.pool_component
+                    .get_vault_amounts();
 
-            let market_state = MarketState {
-                total_pt: reserves[0],
-                total_asset: reserves[1],
-                scalar_root: self.market_state.scalar_root,
-                last_ln_implied_rate: self.market_state.last_ln_implied_rate,
-            };
-
-            self.market_state = market_state;
+            self.market_state.total_pt = reserves[0];
+            self.market_state.total_asset = reserves[1];
         }
 
         pub fn get_market_state(&mut self) -> MarketState {
@@ -441,6 +436,7 @@ mod yield_amm {
                 .is_negative()
             );
 
+            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //----------------------STATE CHANGES----------------------//
@@ -627,6 +623,7 @@ mod yield_amm {
                 new_implied_rate.exp().unwrap()
             );
 
+            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //----------------------STATE CHANGES----------------------//
@@ -821,6 +818,7 @@ mod yield_amm {
                     market_state,
                 );
     
+            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //----------------------STATE CHANGES----------------------//
@@ -1038,6 +1036,7 @@ mod yield_amm {
                 .is_negative()
             );
 
+            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             // *                    STATE CHANGES                       * //
