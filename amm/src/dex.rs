@@ -14,6 +14,8 @@ mod yield_amm {
     // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
         "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
+        // Stokenet
+        // "package_tdx_2_1p473phmwyrl36clwmpl342htjfzl6hjd9yd2rwnmucwrznnlu955fr",
         YieldTokenizer {
             fn tokenize_yield(
                 &mut self, 
@@ -240,9 +242,9 @@ mod yield_amm {
             self.pool_component.get_vault_amounts()
         }
 
-        pub fn get_market_state(&mut self) -> MarketState {
+        fn update_market_state(&mut self) {
             let reserves = 
-                self.pool_component.get_vault_amounts();
+            self.pool_component.get_vault_amounts();
 
             let market_state = MarketState {
                 total_pt: reserves[0],
@@ -252,6 +254,10 @@ mod yield_amm {
             };
 
             self.market_state = market_state;
+        }
+
+        pub fn get_market_state(&mut self) -> MarketState {
+            self.update_market_state();
 
             return self.market_state.clone()
         }
@@ -280,13 +286,18 @@ mod yield_amm {
 
             // Add initial liquidity to be 50/50?
 
-            self.pool_component
-                .contribute(
-                    (
-                        pt_bucket.into(),
-                        asset_bucket.into(), 
-                    )
-                )
+            let (pool_unit, remainder) = 
+                self.pool_component
+                    .contribute(
+                        (
+                            pt_bucket.into(),
+                            asset_bucket.into(), 
+                        )
+                    );
+
+            self.update_market_state();
+
+            return (pool_unit, remainder)
         }
 
         /// Redeems pool units for the underlying pool assets.
@@ -304,8 +315,13 @@ mod yield_amm {
             &mut self, 
             pool_units: FungibleBucket
         ) -> (Bucket, Bucket) {
-            self.pool_component
-                .redeem(pool_units.into())
+            let (pt_bucket, asset_bucket) = 
+                self.pool_component
+                    .redeem(pool_units.into());
+                
+            self.update_market_state();
+
+            return (pt_bucket, asset_bucket)
         }
 
         /// Swaps the given PT for Asset tokens.
