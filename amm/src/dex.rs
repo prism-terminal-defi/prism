@@ -59,8 +59,8 @@ mod yield_amm {
             time_to_expiry => PUBLIC;
             check_maturity => PUBLIC;
             change_market_status => restrict_to: [OWNER];
-            override_last_implied_rate => restrict_to: [OWNER];
-            override_scalar_root => restrict_to: [OWNER];
+            change_last_implied_rate => restrict_to: [OWNER];
+            change_scalar_root => restrict_to: [OWNER];
         }
     }
     pub struct YieldAMM {
@@ -174,16 +174,66 @@ mod yield_amm {
                 }
             );
 
+                        
+
             Self {
                 pool_component,
                 yield_tokenizer_component,
                 market_fee,
                 market_state,
-                market_info,
+                market_info: market_info.clone(),
                 market_is_active: true,
             }
             .instantiate()
             .prepare_to_globalize(owner_role)
+            .metadata(metadata! {
+                roles {
+                    metadata_locker => OWNER;
+                    metadata_locker_updater => OWNER;
+                    metadata_setter => OWNER;
+                    metadata_setter_updater => OWNER;
+                },
+                init {
+                    "name" => "Yield Tokenizer", updatable;
+                    "description" => "", updatable;
+                    "market_resources" => vec![
+                        market_info.underlying_asset_address,
+                        market_info.pt_address,
+                        market_info.yt_address,
+                    ], locked;
+                    "pool_unit" => market_info.pool_unit_address, locked;
+                    "maturity_date" => maturity_date.to_string(), locked;
+                }
+            })
+            .enable_component_royalties(
+                component_royalties! {
+                roles {
+                    royalty_setter => OWNER;
+                    royalty_setter_updater => OWNER;
+                    royalty_locker => OWNER;
+                    royalty_locker_updater => OWNER;
+                    royalty_claimer => OWNER;
+                    royalty_claimer_updater => OWNER;
+                },
+                init {
+                    set_initial_ln_implied_rate => Free, updatable;
+                    get_market_implied_rate => Free, updatable;
+                    get_vault_reserves => Free, updatable;
+                    get_market_state => Free, updatable;
+                    add_liquidity => Free, updatable;
+                    remove_liquidity => Free, updatable;
+                    swap_exact_pt_for_asset => Free, updatable;
+                    swap_exact_asset_for_pt => Free, updatable;
+                    swap_exact_asset_for_yt => Free, updatable;
+                    swap_exact_yt_for_asset => Free, updatable;
+                    compute_market => Free, updatable;
+                    time_to_expiry => Free, updatable;
+                    check_maturity => Free, updatable;
+                    change_market_status => Free, updatable;
+                    change_last_implied_rate => Free, updatable;
+                    change_scalar_root => Free, updatable;
+                }
+            })
             .with_address(address_reservation)
             .globalize()
         }
@@ -1431,14 +1481,14 @@ mod yield_amm {
             self.market_is_active = status;
         }
 
-        pub fn override_last_implied_rate(
+        pub fn change_last_implied_rate(
             &mut self,
             last_implied_rate: PreciseDecimal
         ) {
 
         }
 
-        pub fn override_scalar_root(
+        pub fn change_scalar_root(
             &mut self,
             scalar_root: Decimal
         ) {
