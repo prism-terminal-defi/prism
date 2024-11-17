@@ -174,8 +174,6 @@ mod yield_amm {
                 }
             );
 
-                        
-
             Self {
                 pool_component,
                 yield_tokenizer_component,
