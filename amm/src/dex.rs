@@ -13,9 +13,9 @@ mod yield_amm {
     // The associated YieldTokenizer package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
-        "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
+        // "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         // Stokenet
-        // "package_tdx_2_1p473phmwyrl36clwmpl342htjfzl6hjd9yd2rwnmucwrznnlu955fr",
+        "package_tdx_2_1pkuydwjv54xmc2k2fjvjcfssxyfwzyktyr9vzn8pleqr3vyfdzrpkh",
         YieldTokenizer {
             fn tokenize_yield(
                 &mut self, 
@@ -35,7 +35,7 @@ mod yield_amm {
             fn yt_address(&self) -> ResourceAddress;
             fn underlying_asset(&self) -> ResourceAddress;
             fn maturity_date(&self) -> UtcDateTime;
-            fn asset_addresses(&self) -> (ResourceAddress, ResourceAddress);
+            fn protocol_resources(&self) -> (ResourceAddress, ResourceAddress);
         }
     }
 
@@ -61,6 +61,7 @@ mod yield_amm {
             change_market_status => restrict_to: [OWNER];
             change_last_implied_rate => restrict_to: [OWNER];
             change_scalar_root => restrict_to: [OWNER];
+            change_pool_manager => restrict_to: [OWNER];
         }
     }
     pub struct YieldAMM {
@@ -110,7 +111,7 @@ mod yield_amm {
                 yield_tokenizer_component.underlying_asset();
             
             let (pt_address, yt_address) = 
-                yield_tokenizer_component.asset_addresses();
+                yield_tokenizer_component.protocol_resources();
 
             let maturity_date = yield_tokenizer_component.maturity_date();
 
@@ -230,6 +231,7 @@ mod yield_amm {
                     change_market_status => Free, updatable;
                     change_last_implied_rate => Free, updatable;
                     change_scalar_root => Free, updatable;
+                    change_pool_manager => Free, updatable;
                 }
             })
             .with_address(address_reservation)
@@ -472,6 +474,9 @@ mod yield_amm {
                     market_state
                 );
 
+            let trade_implied_rate = 
+                self.market_state.last_ln_implied_rate;
+
             info!(
                 "[swap_exact_pt_for_asset] Implied Rate After Trade: {:?}",
                 new_implied_rate.exp().unwrap()
@@ -510,6 +515,7 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
@@ -676,6 +682,9 @@ mod yield_amm {
                     market_state
                 );
 
+            let trade_implied_rate = 
+                self.market_state.last_ln_implied_rate;
+
             info!(
                 "[swap_exact_yt_for_asset] Implied Rate After Trade: {:?}",
                 new_implied_rate.exp().unwrap()
@@ -706,6 +715,7 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
@@ -885,6 +895,9 @@ mod yield_amm {
                     market_state,
                 );
     
+            let trade_implied_rate = 
+                self.market_state.last_ln_implied_rate;
+
             self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
@@ -909,6 +922,7 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
@@ -1098,6 +1112,9 @@ mod yield_amm {
                     market_state
                 );
 
+            let trade_implied_rate = 
+                self.market_state.last_ln_implied_rate;
+
             info!(
                 "[swap_exact_yt_for_asset] Implied Rate After Trade: {:?}",
                 new_implied_rate
@@ -1135,6 +1152,7 @@ mod yield_amm {
                     reserve_fees: net_asset_fee_to_reserve,
                     trading_fees,
                     total_fees,
+                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                 }
             );
@@ -1490,6 +1508,10 @@ mod yield_amm {
             &mut self,
             scalar_root: Decimal
         ) {
+
+        }
+
+        pub fn change_pool_manager(&mut self) {
 
         }
     }
