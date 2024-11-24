@@ -13,9 +13,9 @@ mod yield_amm {
     // The associated YieldTokenizer package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
-        // "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
+        "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         // Stokenet
-        "package_tdx_2_1pkuydwjv54xmc2k2fjvjcfssxyfwzyktyr9vzn8pleqr3vyfdzrpkh",
+        // "package_tdx_2_1pk59lq7x85s834f0xpcenncq5ypvxs823ryjnsmye6vyyeq0da8ywn",
         YieldTokenizer {
             fn tokenize_yield(
                 &mut self, 
