@@ -4,8 +4,11 @@ members = [
     "amm",
     "yield_tokenizer",
     "common",
-    "off_ledger",
-    "testing"
+    # "off_ledger",
+    "testing",
+    "libraries/scrypto-interface",
+    "libraries/ports-interface",
+    "libraries/ociswap-v2-adapter-v1"
 ]
 
 [workspace.package]
@@ -15,11 +18,17 @@ edition = "2021"
 [workspace.dependencies]
 scrypto = { version = "1.3.0" }
 # scrypto_math = { git = "https://github.com/ociswap/scrypto-math", tag = "v0.6.0" }
-scrypto_math = { path = "../scrypto-math" }
+# scrypto_math = { path = "../scrypto-math" }
+scrypto_math = { path = "../prism/backend/rust/scrypto-math" }
+prism-calculations = { path = "../prism/backend/rust" }
+radix-transactions = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.3.0" }
 radix-common = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.3.0" }
+radix-sbor-derive = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.3.0" }
+radix-engine-interface = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.3.0" }
+radix-engine-derive = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.3.0" }
+sbor = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.3.0" }
 common = { path = "common" }
-off_ledger = { path = "off_ledger" }
-
+# off_ledger = { path = "off_ledger" }
 
 [profile.release]
 opt-level = 'z'        # Optimize for size.

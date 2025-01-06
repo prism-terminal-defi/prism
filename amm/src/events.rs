@@ -1,5 +1,5 @@
 use scrypto::prelude::*;
-use common::structs::*;
+use crate::structs::*;
 
 #[derive(ScryptoSbor, ScryptoEvent, Debug)]
 pub struct InstantiateAMMEvent {
@@ -7,21 +7,15 @@ pub struct InstantiateAMMEvent {
     pub market_fee: MarketFee,
 }
 
-#[derive(ScryptoSbor, ScryptoEvent, Debug, PartialEq, Eq)]
-pub struct AddLiquidityEvent {
-    
-}
-
-#[derive(ScryptoSbor, ScryptoEvent, Debug, PartialEq, Eq)]
-pub struct RemoveLiquidityEvent {
-    
-}
 
 #[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
 pub struct SwapEvent {
     pub timestamp: UtcDateTime,
-    pub market_pair: (ResourceAddress, ResourceAddress),
-    pub size: Decimal,
+    pub resource_sold: ResourceAddress,
+    pub sell_size: Decimal,
+    pub resource_bought: ResourceAddress,
+    pub buy_size: Decimal,
+    pub trade_volume: Decimal,
     pub side: String,
     // price
     pub exchange_rate_before_fees: PreciseDecimal,
