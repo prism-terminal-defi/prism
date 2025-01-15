@@ -2,9 +2,7 @@ use scrypto::prelude::*;
 use scrypto_math::*;
 use crate::structs::*;
 use yield_tokenizer::structs::YieldTokenData;
-// use off_ledger::liquidity_curve::*;
 use prism_calculations::liquidity_curve::*;
-use prism_calculations::error::*;
 use crate::events::*;
 
 /// 365 days in seconds
@@ -13,13 +11,13 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
 #[blueprint]
 #[events(InstantiateAMMEvent, SwapEvent)]
 mod yield_amm {
-    // The associated YieldTokenizer package and component which is used to verify associated PT, YT, and 
+    // The associated YieldRefractor package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
-        "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
+        // "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         // Stokenet
-        // "package_tdx_2_1p5qnazsugwl3sne7rzv5cg9wckm6s2v7l6fct6cd5jm0y2sq002thl",
-        YieldTokenizer {
+        "package_tdx_2_1pkdn5z6yfkwnwjfwkg2es3yxufe7pqrq2xjan6agvgm06s0mpxv0kq",
+        YieldRefractor {
             fn tokenize(
                 &mut self, 
                 amount: FungibleBucket,
@@ -29,6 +27,7 @@ mod yield_amm {
                 &mut self, 
                 principal_token: FungibleBucket, 
                 yield_token: NonFungibleBucket,
+                yt_amount_to_redeem: Decimal,
             ) -> 
                 (
                     FungibleBucket, 
@@ -74,7 +73,7 @@ mod yield_amm {
     pub struct YieldAMM {
         /// The native pool component which manages liquidity reserves. 
         pub pool_component: Global<TwoResourcePool>,
-        pub yield_tokenizer_component: Global<YieldTokenizer>,
+        pub yield_tokenizer_component: Global<YieldRefractor>,
         /// The initial scalar root of the market. This is used to calculate
         /// the scalar value. It determins the slope of the curve and becomes
         /// less sensitive as the market approaches maturity. The higher the 
@@ -112,7 +111,7 @@ mod yield_amm {
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
         
-            let yield_tokenizer_component: Global<YieldTokenizer> = yield_tokenizer_address.into();
+            let yield_tokenizer_component: Global<YieldRefractor> = yield_tokenizer_address.into();
 
             let (market_name, market_symbol, market_icon) =
                 Self::retrieve_metadata(yield_tokenizer_component);
@@ -262,22 +261,22 @@ mod yield_amm {
         }
 
         pub fn retrieve_metadata(
-            yield_tokenizer_component: Global<YieldTokenizer>,
+            yield_tokenizer_component: Global<YieldRefractor>,
         ) -> (String, String, UncheckedUrl) {
         
             let market_name: String =     
                 yield_tokenizer_component
-                .get_metadata("name")
+                .get_metadata("market_name")
                 .unwrap_or(Some("".to_string()))
                 .unwrap_or("".to_string());
             let market_symbol: String = 
                 yield_tokenizer_component
-                .get_metadata("symbol")
+                .get_metadata("market_symbol")
                 .unwrap_or(Some("".to_string()))
                 .unwrap_or("".to_string());
             let market_icon: UncheckedUrl = 
                 yield_tokenizer_component
-                .get_metadata("icon_url")
+                .get_metadata("market_icon")
                 .unwrap_or(Some(UncheckedUrl::of("https://placeholder.com")))
                 .unwrap_or(UncheckedUrl::of("https://placeholder.com"));
         
@@ -319,16 +318,9 @@ mod yield_amm {
                 self.get_ln_implied_rate( 
                         time_to_expiry,
                         market_compute,
-                    )
-                    .ok()
-                    .unwrap(); 
+                ); 
 
             self.market_state.last_ln_implied_rate = new_implied_rate;
-
-            info!(
-                "Implied Rate: {:?}", 
-                self.market_state.last_ln_implied_rate.exp().unwrap()
-            );
         }
 
         pub fn get_market_implied_rate(&mut self) -> PreciseDecimal {
@@ -427,7 +419,7 @@ mod yield_amm {
         pub fn swap_exact_pt_for_asset(
             &mut self, 
             principal_token: FungibleBucket
-        ) -> Result<FungibleBucket, MarketError> {
+        ) -> FungibleBucket {
             self.assert_market_not_expired();
             self.assert_market_is_active();
 
@@ -455,7 +447,7 @@ mod yield_amm {
                 self.compute_market(
                     market_state.clone(),
                     time_to_expiry
-                )?;
+                );
 
             info!("[swap_exact_pt_for_asset] Calculating trade...");
             // Calcs the the swap
@@ -470,7 +462,7 @@ mod yield_amm {
                         time_to_expiry,
                         &market_state,
                         &market_compute,
-                    )?;  
+                    );  
 
             info!(
                 "[swap_exact_pt_for_asset] Net Asset to Return: {:?}", 
@@ -509,7 +501,7 @@ mod yield_amm {
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
-                )?;
+                );
 
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
@@ -580,7 +572,7 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // EVENTS
             //-----------------------------------------------------------------------
-            Ok(owed_asset_bucket)
+            owed_asset_bucket
         }
 
         /// Swaps the given PT for Asset tokens.
@@ -607,7 +599,7 @@ mod yield_amm {
             &mut self, 
             mut asset_bucket: FungibleBucket, 
             desired_pt_amount: Decimal
-        ) -> Result<(FungibleBucket, FungibleBucket), MarketError> {
+        ) -> (FungibleBucket, FungibleBucket) {
             self.assert_market_not_expired();
             self.assert_market_is_active();
             
@@ -660,7 +652,7 @@ mod yield_amm {
                 self.compute_market(
                     market_state.clone(),
                     time_to_expiry
-                )?;
+                );
 
             // Calcs the swap
             info!("[swap_exact_asset_for_pt] Calculating trade...");
@@ -675,7 +667,7 @@ mod yield_amm {
                     time_to_expiry,
                     &market_state,
                     &market_compute,
-                )?;
+                );
 
             // Assert the amount of Asset sent in is at least equal to the required
             // Asset needed for the desired PT amount.
@@ -737,7 +729,7 @@ mod yield_amm {
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
-                )?;
+                );
 
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
@@ -772,14 +764,8 @@ mod yield_amm {
             info!(
                 "[swap_exact_asset_for_pt] Output PT Redemption Value: {:?}",
                 self.yield_tokenizer_component.get_pt_redemption_value(owed_pt_bucket.amount())
-                );
+            );
 
-
-            // I believe it's optimal to price things in LSU instead of XRD, and LSU price
-            // should be good enough from frontend?
-            // let trade_volume = 
-            //     self.yield_tokenizer_component
-            //     .get_underlying_asset_redemption_value(required_asset_amount);
 
             info!("[swap_exact_pt_for_asset] All in Exchange Rate: {:?}", all_in_exchange_rate);               
             info!("[swap_exact_pt_for_asset] Effective Implied Rate: {:?}", effective_implied_rate);
@@ -811,7 +797,7 @@ mod yield_amm {
             info!("[swap_exact_asset_for_pt] Owed PT: {:?}", owed_pt_bucket.amount());
             info!("[swap_exact_asset_for_pt] Remaining Asset: {:?}", asset_bucket.amount());
 
-            Ok((owed_pt_bucket, asset_bucket))
+            (owed_pt_bucket, asset_bucket)
         }   
 
         /// Swaps the given Asset token for YT (Buying YT)
@@ -832,7 +818,7 @@ mod yield_amm {
             guess_amount_to_swap_in: Decimal,
             optional_yt_bucket: Option<NonFungibleBucket>,
         ) 
-        -> Result<NonFungibleBucket, MarketError> 
+        -> NonFungibleBucket 
         {
             self.assert_market_not_expired();
             self.assert_market_is_active();
@@ -850,7 +836,7 @@ mod yield_amm {
                 // Can't market state be a reference when calc compute?
                 market_state.clone(),
                 time_to_expiry
-            )?;
+            );
 
             info!("[swap_exact_asset_for_yt] Guess PT In: {:?}", guess_amount_to_swap_in);
 
@@ -872,7 +858,7 @@ mod yield_amm {
                     time_to_expiry, 
                     &market_state,
                     &market_compute, 
-                )?;
+                );
 
             info!("[flash_swap] Asset To Borrow Amount: {:?}", asset_to_borrow);
             
@@ -916,7 +902,7 @@ mod yield_amm {
 
             let (
                 yt_to_return, 
-                yt_underlying_asset_amount_diff, 
+                yt_amount_diff, 
                 pt_to_pay_back
             ) = {
                 let initial_yt_data = 
@@ -937,11 +923,11 @@ mod yield_amm {
             
                 let diff = match initial_yt_data {
                     Some(initial_data) => {
-                        new_yt_data.underlying_asset_amount
-                            .checked_sub(initial_data.underlying_asset_amount)
+                        new_yt_data.yt_amount
+                            .checked_sub(initial_data.yt_amount)
                             .expect("YT underlying asset amount should increase")
                     },
-                    None => new_yt_data.underlying_asset_amount,
+                    None => new_yt_data.yt_amount,
                 };
             
                 (yt_to_return, diff, pt_to_pay_back)
@@ -954,12 +940,12 @@ mod yield_amm {
 
             info!(
                 "[swap_exact_asset_for_yt] YT Returned from Splitting: {:?}", 
-                yt_underlying_asset_amount_diff
+                yt_amount_diff
             );
 
             let all_in_exchange_rate_asset_to_yt =
                 asset_amount
-                .checked_div(yt_underlying_asset_amount_diff)
+                .checked_div(yt_amount_diff)
                 .unwrap();
 
             let all_in_exchange_rate =
@@ -999,7 +985,7 @@ mod yield_amm {
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
-                )?;
+                );
     
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
@@ -1026,10 +1012,6 @@ mod yield_amm {
                     time_to_expiry
                 );
 
-            // let trade_volume = 
-            //     self.yield_tokenizer_component
-            //     .get_underlying_asset_redemption_value(asset_amount);
-
             info!("[swap_exact_pt_for_asset] All in Exchange Rate: {:?}", all_in_exchange_rate);               
             info!("[swap_exact_pt_for_asset] Effective Implied Rate: {:?}", effective_implied_rate);
             Runtime::emit_event(
@@ -1038,7 +1020,7 @@ mod yield_amm {
                     resource_sold: self.market_info.underlying_asset_address,
                     sell_size: asset_amount,
                     resource_bought: self.market_info.yt_address,
-                    buy_size: yt_underlying_asset_amount_diff,
+                    buy_size: yt_amount_diff,
                     trade_volume: asset_amount,
                     side: side.to_string(),
                     exchange_rate_before_fees: pre_fee_exchange_rate,
@@ -1049,7 +1031,7 @@ mod yield_amm {
                     effective_implied_rate,
                     trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
-                    output: yt_underlying_asset_amount_diff,
+                    output: yt_amount_diff,
                 }
             );
 
@@ -1057,11 +1039,10 @@ mod yield_amm {
             // EVENTS
             //-----------------------------------------------------------------------
 
-            Ok(yt_to_return)
+            yt_to_return
 
         }
 
-        
         /// Swaps the given YT for Asset tokens (Selling YT):
         ///
         /// 1. Seller sends YT into the swap contract.
@@ -1087,10 +1068,10 @@ mod yield_amm {
             yield_token: NonFungibleBucket,
             amount_yt_to_swap_in: Decimal,
         ) 
-            -> Result<(
+            -> (
                 FungibleBucket, 
                 Option<NonFungibleBucket>,
-            ), MarketError> 
+            ) 
         {
             self.assert_market_not_expired();
             self.assert_market_is_active();
@@ -1102,10 +1083,10 @@ mod yield_amm {
             
             // Need to borrow the same amount of PT as YT to redeem Asset
             let data: YieldTokenData = yield_token.non_fungible().data();
-            let underlying_asset_amount = data.underlying_asset_amount;
             
             assert!(
-                underlying_asset_amount >= amount_yt_to_swap_in
+                data.yt_amount >= amount_yt_to_swap_in,
+                "Insufficient YT Amount"
             );
 
             let pt_to_withdraw = amount_yt_to_swap_in;
@@ -1123,7 +1104,7 @@ mod yield_amm {
                 self.compute_market(
                     market_state.clone(),
                     time_to_expiry
-                )?;
+                );
 
             info!("[swap_exact_yt_for_asset] Calculating trade...");
             let (
@@ -1137,7 +1118,7 @@ mod yield_amm {
                     time_to_expiry,
                     &market_state,
                     &market_compute,
-                )?;
+                );
 
             info!(
                 "[swap_exact_yt_for_asset] 
@@ -1169,6 +1150,7 @@ mod yield_amm {
                     .redeem(
                         withdrawn_pt, 
                         yield_token, 
+                        amount_yt_to_swap_in
                     );
 
             info!(
@@ -1185,15 +1167,7 @@ mod yield_amm {
                 "[swap_exact_yt_for_asset] Excess PT: {:?}",
                 optional_pt_bucket.as_ref().map(|bucket| bucket.amount().clone())
             );
-            
-            // Do we need assertion here to make sure asset token received is greater than asset owed?
-            // let asset_owed_back_to_pool = 
-            //     asset_bucket
-            //     .amount()
-            //     .checked_sub(asset_owed_for_pt_flash_swap)
-            //     .unwrap();
-
-            // Can Asset redeemed be less than Asset owed?
+        
             let asset_owed = 
                 asset_bucket
                 .take(asset_owed_for_pt_flash_swap);
@@ -1222,9 +1196,6 @@ mod yield_amm {
                 )
                 .unwrap();
 
-            // Maybe remove after testing
-            assert_eq!(asset_owed.amount(), asset_owed_for_pt_flash_swap);
-
             self.pool_component.protected_deposit(asset_owed.into());
             // Any excess PT is paid back, pool always wins.
             if let Some(excess_pt_bucket) = optional_pt_bucket {
@@ -1232,23 +1203,11 @@ mod yield_amm {
             }
 
             info!("[swap_exact_yt_for_asset] Updating implied rate...");
-
-            // Do we need to update market_compute and market_state again?
             let new_implied_rate =    
                 self.get_ln_implied_rate(
                     time_to_expiry, 
                     market_compute,
-                )?;
-
-            info!(
-                "[swap_exact_yt_for_asset] Implied Rate Before Trade: {:?}",
-                self.market_state.last_ln_implied_rate
-            );
-    
-            info!(
-                "[swap_exact_yt_for_asset] Implied Rate After Trade: {:?}",
-                new_implied_rate
-            );
+                );
 
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
@@ -1275,10 +1234,6 @@ mod yield_amm {
                     time_to_expiry
                 );
 
-            let trade_volume = 
-                self.yield_tokenizer_component
-                .get_underlying_asset_redemption_value(amount_yt_to_swap_in);
-
             info!("[swap_exact_pt_for_asset] All in Exchange Rate: {:?}", all_in_exchange_rate);               
             info!("[swap_exact_pt_for_asset] Effective Implied Rate: {:?}", effective_implied_rate);
             Runtime::emit_event(
@@ -1288,7 +1243,7 @@ mod yield_amm {
                     sell_size: amount_yt_to_swap_in,
                     resource_bought: self.market_info.underlying_asset_address,
                     buy_size: asset_bucket.amount(),
-                    trade_volume: trade_volume,
+                    trade_volume: amount_yt_to_swap_in,
                     side: side.to_string(),
                     exchange_rate_before_fees: pre_fee_exchange_rate,
                     exchange_rate_after_fees: all_in_exchange_rate,
@@ -1311,14 +1266,14 @@ mod yield_amm {
                 asset_bucket.amount()
             );
 
-            Ok((asset_bucket, optional_yt_bucket))
+            (asset_bucket, optional_yt_bucket)
         }
 
         pub fn compute_market(
             &self,
             market_state: MarketState,
             time_to_expiry: i64
-        ) -> Result<MarketCompute, MarketError> {
+        ) -> MarketCompute {
 
             let proportion = calc_proportion(
                 dec!(0),
@@ -1336,7 +1291,8 @@ mod yield_amm {
                 proportion,
                 time_to_expiry,
                 rate_scalar
-            )?;
+            )
+            .expect("InvalidExchangeRate");
 
             info!(
                 "[compute_market] 
@@ -1348,10 +1304,10 @@ mod yield_amm {
                 rate_anchor
             );
 
-            Ok(MarketCompute {
+            MarketCompute {
                 rate_scalar,
                 rate_anchor,
-            })
+            }
         }
 
         /// Calculates the the trade based on the direction of the trade.
@@ -1363,13 +1319,13 @@ mod yield_amm {
             time_to_expiry: i64,
             market_state: &MarketState,
             market_compute: &MarketCompute,
-        ) -> Result<(
+        ) -> (
             Decimal,
             PreciseDecimal,
             PreciseDecimal,
             PreciseDecimal,
             PreciseDecimal,
-         ), MarketError> {
+         ) {
 
             let resource_divisibility = 
                 self.get_resource_divisibility();
@@ -1389,7 +1345,8 @@ mod yield_amm {
                     proportion,
                     market_compute.rate_anchor,
                     market_compute.rate_scalar
-                )?;
+                )
+                .expect("InvalidExchangeRate");
             
             info!(
                 "[calc_trade] Exchange Rate Before Fees: {:?}", 
@@ -1412,7 +1369,7 @@ mod yield_amm {
                         RoundingMode::AwayFromZero
                     )
                 )
-                .unwrap();
+                .expect("OverflowError");
 
             info!(
                 "[calc_trade] Amount to Return Before Fees: {:?}", 
@@ -1426,7 +1383,8 @@ mod yield_amm {
                     net_pt_amount,
                     pre_fee_exchange_rate,
                     pre_fee_amount
-                )?;
+                )
+                .expect("InvalidExchangeRate");
 
             info!("[calc_trade] Base Fee: {:?}", total_fees);
 
@@ -1446,7 +1404,7 @@ mod yield_amm {
                         RoundingMode::AwayFromZero
                     )
                 )
-                .unwrap();
+                .expect("OverflowError");
 
             info!(
                 "[calc_trade] Reserve Fee: {:?}", 
@@ -1469,7 +1427,7 @@ mod yield_amm {
                         RoundingMode::AwayFromZero
                     )
                 )
-                .unwrap();
+                .expect("OverflowError");
 
             info!("[Calc_trade] Trading Fee: {:?}", trading_fees);
 
@@ -1485,7 +1443,7 @@ mod yield_amm {
                         RoundingMode::AwayFromZero
                     )
                 )
-                .unwrap();
+                .expect("OverflowError");
 
             // Net amount can be negative depending on direciton of the trade.
             // However, we want to have net amount to be positive to be able to 
@@ -1503,7 +1461,7 @@ mod yield_amm {
                         RoundingMode::AwayFromZero
                     )
                 )
-                .unwrap()
+                .expect("OverflowError")
             
             } else {
                 // PT ---> Asset
@@ -1517,7 +1475,7 @@ mod yield_amm {
                         RoundingMode::AwayFromZero
                     )
                 )
-                .unwrap()
+                .expect("OverflowError")
             };
 
             let net_amount =                 
@@ -1532,13 +1490,13 @@ mod yield_amm {
             );
     
 
-            Ok((
+            (
                 net_amount,
                 pre_fee_exchange_rate,
                 total_fees,
                 net_asset_fee_to_reserve,
                 trading_fees,
-            ))
+            )
 
         }
 
@@ -1547,7 +1505,7 @@ mod yield_amm {
             &mut self, 
             time_to_expiry: i64, 
             market_compute: MarketCompute,
-        ) -> Result<PreciseDecimal, MarketError> {
+        ) -> PreciseDecimal {
 
             let proportion = 
                 calc_proportion(
@@ -1561,7 +1519,8 @@ mod yield_amm {
                     proportion,
                     market_compute.rate_anchor,
                     market_compute.rate_scalar
-                )?;
+                )
+                .expect("InvalidExchangeRate");
 
             info!("[get_ln_implied_rate] Exchange Rate: {:?}", exchange_rate);
 
@@ -1577,7 +1536,7 @@ mod yield_amm {
                 .and_then(|result| result.checked_div(time_to_expiry))
                 .unwrap();
 
-            Ok(ln_implied_rate)
+            ln_implied_rate
         }
 
         fn all_in_exchange_rate_to_implied_rate(

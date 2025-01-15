@@ -17,10 +17,6 @@
 
 //! Defines the interface of the adapters used to communicate with pools.
 
-// use radix_common::sbor::{ScryptoSbor, ManifestSbor};
-// use radix_engine_interface::prelude::Reference;
-// use radix_engine_interface::scrypto_args;
-// use radix_engine_interface::sbor::scrypto_decode;
 use scrypto::prelude::*;
 use scrypto_interface::*;
 

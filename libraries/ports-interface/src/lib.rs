@@ -15,6 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-mod pool;
+pub mod pool;
 
 pub mod prelude;

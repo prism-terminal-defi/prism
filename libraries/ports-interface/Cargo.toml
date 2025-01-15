@@ -16,17 +16,17 @@ radix-engine-interface = { workspace = true }
 scrypto-interface = { path = "../scrypto-interface" }
 
 [features]
-default = []
-# default = [
-#     "trait",
-#     "scrypto-stubs",
-#     "scrypto-test-stubs",
-#     "manifest-builder-stubs",
-# ]
+# default = []
+default = [
+    "trait",
+    "scrypto-stubs",
+    "scrypto-test-stubs",
+    "manifest-builder-stubs",
+]
 trait = []
 scrypto-stubs = []
 scrypto-test-stubs = []
-# manifest-builder-stubs = ["dep:transaction"]
+manifest-builder-stubs = ["dep:radix-transactions"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

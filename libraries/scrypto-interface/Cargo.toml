@@ -9,9 +9,9 @@ heck = { version = "0.4.1" }
 proc-macro2 = { version = "1.0.76" }
 quote = { version = "1.0.35" }
 syn = { version = "2.0.48", features = ["full", "extra-traits"] }
-radix-common = { workspace = true }
-radix-engine-interface = { workspace = true }
-radix-sbor-derive = { workspace = true }
+# radix-common = { workspace = true }
+# radix-engine-interface = { workspace = true }
+# radix-sbor-derive = { workspace = true }
 
 [lib]
 doctest = false
