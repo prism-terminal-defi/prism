@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 scrypto = { workspace = true }
 scrypto_math = { workspace = true}
-# off_ledger = { workspace = true }
 prism-calculations = { workspace = true }
 yield_tokenizer = { path = "../yield_tokenizer" }
 

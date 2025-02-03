@@ -46,6 +46,12 @@ pub struct MarketCompute {
 }
 
 #[derive(ScryptoSbor, Clone, Debug)]
+pub struct PoolVaultReserves {
+    pub total_pt_amount: Decimal,
+    pub total_underlying_asset_amount: Decimal,
+}
+
+#[derive(ScryptoSbor, Clone, Debug)]
 pub struct ResourceInformation {
     pub amount: Decimal,
     pub divisibility: i64,
@@ -53,7 +59,7 @@ pub struct ResourceInformation {
 
 #[derive(ScryptoSbor, Clone, Debug)]
 pub struct PoolStat {
-    pub trading_fees_collected: Decimal,
-    pub reserve_fees_collected: Decimal,
-    pub total_fees_collected: Decimal,
+    pub trading_fees_collected: PreciseDecimal,
+    pub reserve_fees_collected: PreciseDecimal,
+    pub total_fees_collected: PreciseDecimal,
 }
