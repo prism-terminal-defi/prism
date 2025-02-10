@@ -30,7 +30,7 @@ dependencies = [
  "scrypto-test",
  "scrypto_math",
  "test-case",
- "yield_tokenizer",
+ "yield_refractor",
 ]
 
 [[package]]
@@ -1926,7 +1926,7 @@ dependencies = [
  "scrypto",
  "scrypto-test",
  "scrypto_math",
- "yield_tokenizer",
+ "yield_refractor",
 ]
 
 [[package]]
@@ -2462,7 +2462,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "yield_tokenizer"
+name = "yield_refractor"
 version = "0.1.0"
 dependencies = [
  "radix-transactions 1.3.0 (git+https://github.com/radixdlt/radixdlt-scrypto?tag=v1.3.0)",

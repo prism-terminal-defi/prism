@@ -7,7 +7,7 @@ edition.workspace = true
 scrypto = { workspace = true }
 scrypto_math = { workspace = true}
 prism-calculations = { workspace = true }
-yield_tokenizer = { path = "../yield_tokenizer" }
+yield_refractor = { path = "../yield_refractor" }
 
 [dev-dependencies]
 scrypto-test = { version = "1.3.0" }

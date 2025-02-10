@@ -1,7 +1,7 @@
 use scrypto::prelude::*;
 use scrypto_math::*;
 use crate::structs::*;
-use yield_tokenizer::structs::YieldTokenData;
+use yield_refractor::structs::YieldTokenData;
 use prism_calculations::liquidity_curve::*;
 use crate::events::*;
 
@@ -14,9 +14,9 @@ mod yield_amm {
     // The associated YieldRefractor package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
-        // "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
+        "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         // Stokenet
-        "package_tdx_2_1pkxhh26q0yetjwcgfhdhwyu62pcdspavl88px2xwnlhm9n7t7uytyz",
+        // "package_tdx_2_1pkxhh26q0yetjwcgfhdhwyu62pcdspavl88px2xwnlhm9n7t7uytyz",
         YieldRefractor {
             fn tokenize(
                 &mut self, 
@@ -25,8 +25,8 @@ mod yield_amm {
             ) -> (FungibleBucket, NonFungibleBucket);
             fn redeem(
                 &mut self, 
-                principal_token: FungibleBucket, 
-                yield_token: NonFungibleBucket,
+                pt_bucket: FungibleBucket, 
+                yt_bucket: NonFungibleBucket,
                 yt_amount_to_redeem: Decimal,
             ) -> 
                 (
@@ -52,7 +52,7 @@ mod yield_amm {
 
     enable_method_auth! {
         methods {
-            set_initial_ln_implied_rate => restrict_to: [OWNER];
+            set_initial_ln_implied_rate => restrict_to: [OWNER, SELF];
             get_market_implied_rate => PUBLIC;
             get_vault_reserves => PUBLIC;
             get_market_state => PUBLIC;
@@ -96,9 +96,10 @@ mod yield_amm {
             /* Initial market values */
             // The initial scalar root of the market which determines the initial
             // steepness of the curve (high slippage at the ends of the curve).
+            initial_rate_anchor: PreciseDecimal,
             scalar_root: Decimal,
             market_fee_input: MarketFeeInput,
-            yield_tokenizer_address: ComponentAddress
+            yt_bucketizer_address: ComponentAddress
         ) -> Global<YieldAMM> {
             assert!(scalar_root > Decimal::ZERO);
             assert!(market_fee_input.fee_rate > Decimal::ZERO);
@@ -106,14 +107,14 @@ mod yield_amm {
                 market_fee_input.reserve_fee_percent > Decimal::ZERO 
                 && market_fee_input.reserve_fee_percent < Decimal::ONE
             );
-            // Should check whether market has expired
 
             let (address_reservation, component_address) =
                 Runtime::allocate_component_address(YieldAMM::blueprint_id());
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
         
-            let yield_refractor_component: Global<YieldRefractor> = yield_tokenizer_address.into();
+            let yield_refractor_component: Global<YieldRefractor> = 
+                yt_bucketizer_address.into();
 
             let (market_name, market_symbol, market_icon) =
                 Self::retrieve_metadata(yield_refractor_component);
@@ -125,6 +126,19 @@ mod yield_amm {
                 yield_refractor_component.protocol_resources();
 
             let maturity_date = yield_refractor_component.maturity_date();
+
+            let is_current_time_less_than_maturity_date = 
+                Clock::current_time_comparison(
+                    maturity_date.to_instant(), 
+                    TimePrecisionV2::Second, 
+                    TimeComparisonOperator::Lt
+                );
+
+            assert_eq!(
+                is_current_time_less_than_maturity_date, 
+                true,
+                "Market has expired!"
+            );
 
             let combined_rule_node = 
                 owner_role_node
@@ -168,6 +182,7 @@ mod yield_amm {
             let market_state = MarketState {
                 total_pt: Decimal::ZERO,
                 total_asset: Decimal::ZERO,
+                initial_rate_anchor,
                 scalar_root,
                 last_ln_implied_rate: PreciseDecimal::ZERO,
             };
@@ -227,7 +242,6 @@ mod yield_amm {
                     "market_name" => market_name, updatable;
                     "symbol" => market_symbol, updatable;
                     "icon_url" => market_icon, updatable;
-                    "description" => "", updatable;
                     "market_resources" => vec![
                         market_info.underlying_asset_address,
                         market_info.pt_address,
@@ -311,8 +325,6 @@ mod yield_amm {
 
             let time_to_expiry = self.time_to_expiry();
 
-            // let market_state = self.get_market_state();
-
             let rate_scalar = 
                 calc_rate_scalar(
                     self.market_state.scalar_root,
@@ -357,18 +369,18 @@ mod yield_amm {
             }
         }
 
-        fn update_market_state(&mut self) {
-            let pool_vault_reserves = 
-                self.get_vault_reserves();
-
-            self.market_state.total_pt = pool_vault_reserves.total_pt_amount;
-            self.market_state.total_asset = pool_vault_reserves.total_underlying_asset_amount;
-        }
-
         pub fn get_market_state(&mut self) -> MarketState {
-            self.update_market_state();
+            let pool_reserve_vaults = self.get_vault_reserves();
 
-            return self.market_state.clone()
+            let market_state = MarketState {
+                total_pt: pool_reserve_vaults.total_pt_amount,
+                total_asset: pool_reserve_vaults.total_underlying_asset_amount,
+                initial_rate_anchor: self.market_state.initial_rate_anchor,
+                scalar_root: self.market_state.scalar_root,
+                last_ln_implied_rate: self.market_state.last_ln_implied_rate,
+            };
+
+            return market_state 
         }
 
         /// Adds liquidity to pool reserves.
@@ -376,7 +388,7 @@ mod yield_amm {
         /// # Arguments
         ///
         /// * `asset_buckets`: [`FungibleBucket`] - A fungible bucket of Asset token supply.
-        /// * `principal_token`: [`FungibleBucket`] - A fungible bucket of principal token supply.
+        /// * `pt_bucket`: [`FungibleBucket`] - A fungible bucket of principal token supply.
         ///
         /// # Returns
         /// 
@@ -390,19 +402,30 @@ mod yield_amm {
             FungibleBucket, 
             Option<FungibleBucket>, 
         ) {
-
             self.assert_market_not_expired();
 
             let (pool_unit, remainder) = 
                 self.pool_component
                     .contribute(
-                        (
-                            pt_bucket.into(),
-                            asset_bucket.into(), 
-                        )
+                        (pt_bucket.into(), asset_bucket.into())
                     );
 
-            self.update_market_state();
+            // Initialize Market State if not already initialized
+            if self.market_state.last_ln_implied_rate == PreciseDecimal::ZERO {
+
+                //-----------------------------------------------------------------------
+                // STATE CHANGES
+                //-----------------------------------------------------------------------
+
+                self.set_initial_ln_implied_rate(
+                    self.market_state.initial_rate_anchor
+                );
+
+                //-----------------------------------------------------------------------
+                // STATE CHANGES
+                //-----------------------------------------------------------------------
+
+            };
 
             return (pool_unit, remainder)
         }
@@ -425,8 +448,6 @@ mod yield_amm {
             let (pt_bucket, asset_bucket) = 
                 self.pool_component
                     .redeem(pool_units.into());
-                
-            self.update_market_state();
 
             return (pt_bucket, asset_bucket)
         }
@@ -435,7 +456,7 @@ mod yield_amm {
         /// 
         /// # Arguments
         ///
-        /// * `principal_token`: [`FungibleBucket`] - A fungible bucket of PT tokens to
+        /// * `pt_bucket`: [`FungibleBucket`] - A fungible bucket of PT tokens to
         /// to swap for Asset. 
         ///
         /// # Returns
@@ -443,18 +464,19 @@ mod yield_amm {
         /// * [`FungibleBucket`] - A bucket of Asset tokens.
         pub fn swap_exact_pt_for_asset(
             &mut self, 
-            principal_token: FungibleBucket
+            pt_bucket: FungibleBucket
         ) -> FungibleBucket {
             self.assert_market_not_expired();
             self.assert_market_is_active();
 
-            let pt_amount_in = principal_token.amount();
+            let pt_amount_in = pt_bucket.amount();
         
             assert_eq!(
-                principal_token.resource_address(), 
+                pt_bucket.resource_address(), 
                 self.market_info.pt_address
             );
-            
+            assert_eq!(pt_bucket.is_empty(), false);
+
             let time_to_expiry = self.time_to_expiry();
 
             // Calcs the rate scalar and rate anchor with the current market state
@@ -468,13 +490,13 @@ mod yield_amm {
                 net_asset_fee_to_reserve,
                 trading_fees,
             ) = self.calc_trade( 
-                        principal_token.amount().checked_neg().unwrap(), 
+                        pt_bucket.amount().checked_neg().unwrap(), 
                         time_to_expiry,
                         &market_compute,
                     );  
 
             let all_in_exchange_rate = 
-                principal_token.amount()
+                pt_bucket.amount()
                 .checked_div(asset_to_account)
                 .unwrap();
 
@@ -482,7 +504,7 @@ mod yield_amm {
             // STATE CHANGES
             //-----------------------------------------------------------------------
 
-            self.pool_component.protected_deposit(principal_token.into());
+            self.pool_component.protected_deposit(pt_bucket.into());
 
             let owed_asset_bucket = 
                 self.pool_component.protected_withdraw(
@@ -506,14 +528,7 @@ mod yield_amm {
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
 
-            let side = 
-                if new_implied_rate > trade_implied_rate {
-                    "Long Yield" 
-                } else {
-                    "Short Yield"
-                };
 
-            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //-----------------------------------------------------------------------
@@ -524,15 +539,18 @@ mod yield_amm {
             // EVENTS
             //-----------------------------------------------------------------------
 
+            let side = 
+                if new_implied_rate > trade_implied_rate {
+                    "Long Yield" 
+                } else {
+                    "Short Yield"
+                };
+
             let effective_implied_rate =
                 self.all_in_exchange_rate_to_implied_rate(
                     all_in_exchange_rate, 
                     time_to_expiry
                 );
-
-            let trade_volume = 
-                self.get_yield_refractor_component()
-                .get_pt_redemption_value(pt_amount_in);
 
             Runtime::emit_event(
                 SwapEvent {
@@ -541,7 +559,7 @@ mod yield_amm {
                     sell_size: pt_amount_in,
                     resource_bought: self.market_info.underlying_asset_address,
                     buy_size: owed_asset_bucket.amount(),
-                    trade_volume: trade_volume,
+                    trade_volume: pt_amount_in,
                     side: side.to_string(),
                     exchange_rate_before_fees: pre_fee_exchange_rate,
                     exchange_rate_after_fees: all_in_exchange_rate,
@@ -593,6 +611,7 @@ mod yield_amm {
                 asset_bucket.resource_address(), 
                 self.market_info.underlying_asset_address
             );
+            assert_eq!(asset_bucket.is_empty(), false);
 
             let time_to_expiry = self.time_to_expiry();
 
@@ -648,16 +667,6 @@ mod yield_amm {
                     &market_compute,
                 );
 
-            // Assert the amount of Asset sent in is at least equal to the required
-            // Asset needed for the desired PT amount.
-            assert!(
-                asset_bucket.amount() >= required_asset_amount,
-                "Asset amount: {:?}
-                Required asset amount: {:?}",
-                asset_bucket.amount(),
-                required_asset_amount
-            );
-
             // Might need to be required_asset_amount / desired_pt_amount
             let all_in_exchange_rate =
                 desired_pt_amount
@@ -665,14 +674,14 @@ mod yield_amm {
                 .unwrap();
 
             // Only need to take the required Asset, return the rest.
-            let required_asset_bucket = asset_bucket.take(required_asset_amount);
+            let required_asset_bucket = 
+                asset_bucket.take(required_asset_amount);
 
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
             
             self.pool_component.protected_deposit(required_asset_bucket.into());
-
             
             let owed_pt_bucket = 
                 self.pool_component.protected_withdraw(
@@ -697,13 +706,7 @@ mod yield_amm {
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
 
-            let side = if new_implied_rate > trade_implied_rate {
-                "Long Yield"
-            } else {
-                "Short Yield"
-            };
 
-            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //-----------------------------------------------------------------------
@@ -713,6 +716,14 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // EVENTS
             //-----------------------------------------------------------------------
+
+            let side = 
+                if new_implied_rate > trade_implied_rate {
+                    "Long Yield"
+                } else {
+                    "Short Yield"
+                };
+
             let effective_implied_rate =
                 self.all_in_exchange_rate_to_implied_rate(
                     all_in_exchange_rate, 
@@ -726,7 +737,7 @@ mod yield_amm {
                     sell_size: required_asset_amount,
                     resource_bought: self.market_info.pt_address,
                     buy_size: owed_pt_bucket.amount(),
-                    trade_volume: required_asset_amount,
+                    trade_volume: owed_pt_bucket.amount(),
                     side: side.to_string(),
                     exchange_rate_before_fees: pre_fee_exchange_rate,
                     exchange_rate_after_fees: all_in_exchange_rate,
@@ -763,26 +774,20 @@ mod yield_amm {
             mut asset_bucket: FungibleBucket,
             guess_amount_to_swap_in: Decimal,
             optional_yt_bucket: Option<NonFungibleBucket>,
-        ) 
-        -> NonFungibleBucket 
-        {
+        )  -> NonFungibleBucket {
             self.assert_market_not_expired();
             self.assert_market_is_active();
-
+        
             assert_eq!(
                 asset_bucket.resource_address(),
                 self.market_info.underlying_asset_address
             );
+            assert_eq!(asset_bucket.is_empty(), false);
 
             let asset_amount = asset_bucket.amount();
 
             let time_to_expiry = self.time_to_expiry();
             let market_compute = self.compute_market(time_to_expiry);
-
-            let required_asset_to_borrow =
-                guess_amount_to_swap_in
-                .checked_sub(asset_bucket.amount())
-                .unwrap(); 
             
             let (
                 asset_to_borrow,
@@ -793,28 +798,8 @@ mod yield_amm {
             ) = self.calc_trade(
                     guess_amount_to_swap_in.checked_neg().unwrap(), 
                     time_to_expiry, 
-                    // &market_state,
                     &market_compute, 
                 );
-            
-            // Not sure or don't remember when asset_to_borrow needs to be >= required_asset_to_borrow
-            assert!(
-                asset_to_borrow >= required_asset_to_borrow 
-            );
-
-
-            let all_in_exchange_rate_asset_to_pt = 
-                asset_to_borrow
-                // asset_to_borrow + asset_amount should = PT Guess In or thereabouts.
-                // The reason we don't use guess PT In is because we actually pay back more
-                // in PT for the trade since we get more assets for the PT Guess in than the
-                // Algo provideded.
-                .checked_div(
-                    asset_to_borrow
-                    .checked_add(asset_amount)
-                    .unwrap()
-                ) 
-                .unwrap();
 
             //-----------------------------------------------------------------------
             // STATE CHANGES
@@ -838,7 +823,7 @@ mod yield_amm {
             let (
                 yt_to_return, 
                 yt_amount_diff, 
-                pt_to_pay_back
+                pt_bucket_to_pay_back
             ) = self.handle_optional_yt_bucket(
                 optional_yt_bucket, 
                 asset_bucket
@@ -846,7 +831,7 @@ mod yield_amm {
 
             info!(
                 "[swap_exact_asset_for_yt] PT Returned from Splitting: {:?}", 
-                pt_to_pay_back.amount()
+                pt_bucket_to_pay_back.amount()
             );
 
             info!(
@@ -859,6 +844,7 @@ mod yield_amm {
                 .checked_div(yt_amount_diff)
                 .unwrap();
 
+            // All in exchange rate in terms of PT
             let all_in_exchange_rate =
                 Decimal::ONE
                 .checked_div(
@@ -868,30 +854,8 @@ mod yield_amm {
                 )
                 .unwrap();
 
-            info!(
-                "[swap_exact_asset_for_yt] All-in Exchange Rate of Asset/PT: {:?}",
-                all_in_exchange_rate_asset_to_pt  
-            );
-            
-            info!(
-                "[swap_exact_asset_for_yt] All-in Exchange Rate of YT/Asset: {:?}",
-                all_in_exchange_rate_asset_to_yt
-            );
-
-            info!(
-                "[swap_exact_asset_for_yt] Combined Exchange Rate: {:?}",
-                all_in_exchange_rate_asset_to_yt
-                .checked_add(all_in_exchange_rate_asset_to_pt)
-                .unwrap()
-            );
-
-            // May remove after testing
-            assert!(
-                pt_to_pay_back.amount() >= guess_amount_to_swap_in
-            );
-
-            self.pool_component.protected_deposit(pt_to_pay_back.into());
-        
+            let pt_amount_to_pay_back = pt_bucket_to_pay_back.amount();
+            self.pool_component.protected_deposit(pt_bucket_to_pay_back.into());
 
             self.update_pool_stat(
                 trading_fees,
@@ -908,14 +872,6 @@ mod yield_amm {
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
 
-            let side = 
-                if new_implied_rate > trade_implied_rate {
-                    "Long Yield"
-                } else {
-                    "Short Yield"
-                };
-
-            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //-----------------------------------------------------------------------
@@ -925,6 +881,13 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // EVENTS
             //-----------------------------------------------------------------------
+            let side = 
+                if new_implied_rate > trade_implied_rate {
+                    "Long Yield"
+                } else {
+                    "Short Yield"
+                };
+
             let effective_implied_rate =
                 self.all_in_exchange_rate_to_implied_rate(
                     all_in_exchange_rate, 
@@ -938,7 +901,7 @@ mod yield_amm {
                     sell_size: asset_amount,
                     resource_bought: self.market_info.yt_address,
                     buy_size: yt_amount_diff,
-                    trade_volume: asset_amount,
+                    trade_volume: pt_amount_to_pay_back,
                     side: side.to_string(),
                     exchange_rate_before_fees: pre_fee_exchange_rate,
                     exchange_rate_after_fees: all_in_exchange_rate,
@@ -971,7 +934,7 @@ mod yield_amm {
         ///
         /// # Arguments
         ///
-        /// * `yield_token`: [`FungibleBucket`] - A fungible bucket of Asset tokens to
+        /// * `yt_bucket`: [`FungibleBucket`] - A fungible bucket of Asset tokens to
         /// swap for YT.
         /// * `amount_yt_to_swap_in`: [Decimal] - Amount of YT to swap in.
         ///
@@ -982,7 +945,7 @@ mod yield_amm {
         /// * [`Option<FungibleBucket>`] - A bucket of unused Asset.
         pub fn swap_exact_yt_for_asset(
             &mut self, 
-            yield_token: NonFungibleBucket,
+            yt_bucket: NonFungibleBucket,
             amount_yt_to_swap_in: Decimal,
         ) 
             -> (
@@ -993,13 +956,12 @@ mod yield_amm {
             self.assert_market_not_expired();
             self.assert_market_is_active();
 
-            assert_eq!(
-                yield_token.resource_address(), 
-                self.market_info.yt_address
-            );
+            assert_eq!(yt_bucket.resource_address(), self.market_info.yt_address);
+            assert_eq!(yt_bucket.is_empty(), false);
+            assert!(amount_yt_to_swap_in > Decimal::ZERO);
+            assert_eq!(yt_bucket.amount(), Decimal::ONE);
             
-            // Need to borrow the same amount of PT as YT to redeem Asset
-            let data: YieldTokenData = yield_token.non_fungible().data();
+            let data: YieldTokenData = yt_bucket.non_fungible().data();
             
             assert!(
                 data.yt_amount >= amount_yt_to_swap_in,
@@ -1009,7 +971,6 @@ mod yield_amm {
             let pt_to_withdraw = amount_yt_to_swap_in;
 
             let time_to_expiry = self.time_to_expiry();
-
             let market_compute = self.compute_market(time_to_expiry);
 
             let (
@@ -1024,19 +985,11 @@ mod yield_amm {
                     &market_compute,
                 );
 
-            info!(
-                "[swap_exact_yt_for_asset] 
-                Required Asset to pay back (Net Asset Returned): {:?}
-                for desired PT amount: {:?}",
-                asset_owed_for_pt_flash_swap,
-                pt_to_withdraw
-            );
-
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
 
-            let withdrawn_pt = 
+            let withdrawn_pt_bucket = 
                 self.pool_component.protected_withdraw(
                     self.market_info.pt_address, 
                     pt_to_withdraw, 
@@ -1045,49 +998,24 @@ mod yield_amm {
 
             // Combine PT and YT to redeem Asset
             let (
-                mut asset_bucket, 
+                mut redeemed_asset_bucket, 
                 optional_yt_bucket,
                 optional_pt_bucket,
             ) = self.get_yield_refractor_component()
                     .redeem(
-                        withdrawn_pt, 
-                        yield_token, 
+                        withdrawn_pt_bucket, 
+                        yt_bucket, 
                         amount_yt_to_swap_in
                     );
-
-            info!(
-                "[swap_exact_yt_for_asset] Asset Redeemed: {:?}",
-                asset_bucket.amount()
-            );
-            
-            info!(
-                "[swap_exact_yt_for_asset] Excess YT: {:?}",
-                optional_yt_bucket.as_ref().map(|bucket| bucket.non_fungible::<YieldTokenData>().data())
-            );
-            
-            info!(
-                "[swap_exact_yt_for_asset] Excess PT: {:?}",
-                optional_pt_bucket.as_ref().map(|bucket| bucket.amount().clone())
-            );
         
             let asset_owed = 
-                asset_bucket
+                redeemed_asset_bucket
                 .take(asset_owed_for_pt_flash_swap);
 
             let yt_exchange_rate =
-                asset_bucket.amount()
+                redeemed_asset_bucket.amount()
                 .checked_div(amount_yt_to_swap_in)
                 .unwrap();
-
-            info!(
-                "[swap_exact_yt_for_asset] All-in Exchange rate of Asset/PT: {:?}",
-                asset_owed_for_pt_flash_swap.checked_div(pt_to_withdraw).unwrap()
-            );
-
-            info!(
-                "[swap_exact_yt_for_asset] All-in Exchange rate of Asset/YT: {:?}",
-                yt_exchange_rate
-            );
 
             let all_in_exchange_rate =
                 Decimal::ONE
@@ -1099,6 +1027,7 @@ mod yield_amm {
                 .unwrap();
 
             self.pool_component.protected_deposit(asset_owed.into());
+
             // Any excess PT is paid back, pool always wins.
             if let Some(excess_pt_bucket) = optional_pt_bucket {
                 self.pool_component.protected_deposit(excess_pt_bucket);
@@ -1119,14 +1048,6 @@ mod yield_amm {
             let trade_implied_rate = 
                 self.market_state.last_ln_implied_rate;
 
-            let side = 
-                if new_implied_rate > trade_implied_rate {
-                    "Long Yield"
-                } else {
-                    "Short Yield"
-                };
-
-            self.update_market_state();
             self.market_state.last_ln_implied_rate = new_implied_rate;
 
             //-----------------------------------------------------------------------
@@ -1136,6 +1057,14 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // EVENTS
             //-----------------------------------------------------------------------
+
+            let side = 
+                if new_implied_rate > trade_implied_rate {
+                    "Long Yield"
+                } else {
+                    "Short Yield"
+                };
+
             let effective_implied_rate =
                 self.all_in_exchange_rate_to_implied_rate(
                     all_in_exchange_rate, 
@@ -1148,8 +1077,8 @@ mod yield_amm {
                     resource_sold: self.market_info.yt_address,
                     sell_size: amount_yt_to_swap_in,
                     resource_bought: self.market_info.underlying_asset_address,
-                    buy_size: asset_bucket.amount(),
-                    trade_volume: amount_yt_to_swap_in,
+                    buy_size: redeemed_asset_bucket.amount(),
+                    trade_volume: pt_to_withdraw,
                     side: side.to_string(),
                     exchange_rate_before_fees: pre_fee_exchange_rate,
                     exchange_rate_after_fees: all_in_exchange_rate,
@@ -1159,7 +1088,7 @@ mod yield_amm {
                     effective_implied_rate,
                     trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
-                    output: asset_bucket.amount(),
+                    output: redeemed_asset_bucket.amount(),
                 }
             );
 
@@ -1167,12 +1096,7 @@ mod yield_amm {
             // EVENTS
             //-----------------------------------------------------------------------
 
-            info!(
-                "[swap_exact_yt_for_asset] Asset Returned: {:?}", 
-                asset_bucket.amount()
-            );
-
-            (asset_bucket, optional_yt_bucket)
+            (redeemed_asset_bucket, optional_yt_bucket)
         }
 
         pub fn compute_market(
@@ -1353,8 +1277,6 @@ mod yield_amm {
                 .expect("OverflowError")
             };
 
-            
-
             let net_amount =                 
                 Decimal::try_from(net_amount)
                 .ok()
@@ -1377,17 +1299,20 @@ mod yield_amm {
         ) -> (NonFungibleBucket, Decimal, FungibleBucket) {
 
             let initial_yt_data = 
-            optional_yt_bucket
-            .as_ref()
-            .map(|yt_bucket| {
-                yt_bucket.non_fungible::<YieldTokenData>().data()
-            });
+                optional_yt_bucket
+                .as_ref()
+                .map(|yt_bucket| {
+                    yt_bucket.non_fungible::<YieldTokenData>().data()
+                });
         
             let (
                 pt_to_pay_back, 
                 yt_to_return
             ) = self.get_yield_refractor_component()
-                .tokenize(asset_bucket, optional_yt_bucket);
+                    .tokenize(
+                        asset_bucket, 
+                        optional_yt_bucket
+                    );
         
             let new_yt_data = 
                 yt_to_return.non_fungible::<YieldTokenData>().data();
@@ -1464,7 +1389,9 @@ mod yield_amm {
 
             let ln_implied_rate = 
                 ln_exchange_rate.checked_mul(PERIOD_SIZE)
-                .and_then(|result| result.checked_div(time_to_expiry))
+                .and_then(|result| 
+                    result.checked_div(time_to_expiry)
+                )
                 .unwrap();
 
             ln_implied_rate
@@ -1475,8 +1402,6 @@ mod yield_amm {
             exchange_rate: Decimal,
             time_to_expiry: i64,
         ) -> Decimal {
-
-            // let ln_exchange_rate = exchange_rate.ln().unwrap();
 
             // ln_exchange_rate
             exchange_rate

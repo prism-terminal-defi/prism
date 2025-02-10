@@ -31,23 +31,23 @@ define_interface! {
     ] {
         fn get_redemption_value(
             &self,
-            pool_address: ComponentAddress,
-            amount: Decimal,
-        ) -> Decimal;
+            pool_address: i64,
+            amount: i64,
+        ) -> i64;
 
         fn total_stake_amount(
             &self,
-            pool_address: ComponentAddress,
-        ) -> Decimal;
+            pool_address: i64,
+        ) -> i64;
 
         fn total_stake_unit_supply(
             &self,
-            pool_address: ComponentAddress,
-        ) -> Decimal;
+            pool_address: i64,
+        ) -> i64;
 
         fn resource_addresses(
             &mut self,
-            pool_address: ComponentAddress
-        ) -> (ResourceAddress, ResourceAddress);
+            pool_address: i64
+        ) -> (i64, i64);
     }
 }

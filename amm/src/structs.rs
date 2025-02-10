@@ -4,6 +4,7 @@ use scrypto::prelude::*;
 pub struct MarketState {
     pub total_pt: Decimal,
     pub total_asset: Decimal,
+    pub initial_rate_anchor: PreciseDecimal,
     pub scalar_root: Decimal,
     /// The natural log of the implied rate of the last trade.
     pub last_ln_implied_rate: PreciseDecimal,

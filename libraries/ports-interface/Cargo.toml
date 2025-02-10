@@ -16,7 +16,6 @@ radix-engine-interface = { workspace = true }
 scrypto-interface = { path = "../scrypto-interface" }
 
 [features]
-# default = []
 default = [
     "trait",
     "scrypto-stubs",
