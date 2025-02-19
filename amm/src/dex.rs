@@ -812,11 +812,6 @@ mod yield_amm {
                     WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
                 );
 
-            info!(
-                "[flash_swap] Asset to Flash Swap Amount: {:?}", 
-                asset_to_flash_swap.amount()
-            );
-
             // Combined asset
             asset_bucket.put(asset_to_flash_swap);
 
@@ -827,16 +822,6 @@ mod yield_amm {
             ) = self.handle_optional_yt_bucket(
                 optional_yt_bucket, 
                 asset_bucket
-            );
-
-            info!(
-                "[swap_exact_asset_for_yt] PT Returned from Splitting: {:?}", 
-                pt_bucket_to_pay_back.amount()
-            );
-
-            info!(
-                "[swap_exact_asset_for_yt] YT Returned from Splitting: {:?}", 
-                yt_amount_diff
             );
 
             let all_in_exchange_rate_asset_to_yt =
