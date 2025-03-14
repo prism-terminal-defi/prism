@@ -59,7 +59,7 @@ struct YieldAMM {
 
 | Field | Type  | Description |
 | ----- | ----- | ----------- |
-| `pool_component` | `Global<TwoResourcePool>` |  The `pt_rm` is a field that contains the `ResourceManager` for PT. It is used to mint and burn PTs and verify incoming PTs to the `YieldTokenizer` component.
+| `pool_component` | `Global<TwoResourcePool>` |  The `pt_rm` is a field that contains the `ResourceManager` for PT. It is used to mint and burn PTs and verify incoming PTs to the `PrismSplitter` component.
 | `flash_loan_rm` | `ResourceManager` | The `flash_loan_rm` is a field that contains the `ResourceManager` for the flash loan receipt. It is a receipt minted when taking out flash loans.
 | `maturity_date` | `UtcDateTime` | The `requested_resource_vault` is a field that will contain the resource offered by the other party. When the other party sends the resource requested by the instantiatior, the resource will be contained in the `Vault` value.
 | `scalar_root` | `Decimal` | The initial scalar value used to determine the steepness of the curve.

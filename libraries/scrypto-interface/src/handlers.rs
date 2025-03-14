@@ -24,8 +24,6 @@ use syn::spanned::*;
 use syn::*;
 use crate::types::{Signature, *};
 
-// use radix_common::prelude::*;
-// use radix_engine_interface::prelude::{Reference, scrypto_decode};
 pub fn handle_define_interface(
     input: TokenStream2,
 ) -> syn::Result<TokenStream2> {
@@ -126,7 +124,7 @@ fn generate_scrypto_stub(
     .iter()
     .map(|ty| -> syn::Type {
         let ty_ident = Ident::new(ty, blueprint_ident.span());
-        parse_quote!(::radix_engine_interface::prelude::#ty_ident)
+        parse_quote!(::scrypto::prelude::#ty_ident)
     })
     .map(|ty| {
         quote! {
@@ -134,7 +132,7 @@ fn generate_scrypto_stub(
             impl TryFrom<#struct_ident> for #ty
             {
                 type Error = <
-                    #ty as TryFrom<::radix_engine_interface::prelude::NodeId>
+                    #ty as TryFrom<::scrypto::prelude::NodeId>
                 >::Error;
 
                 fn try_from(
@@ -168,28 +166,30 @@ fn generate_scrypto_stub(
                 if arguments.is_function() {
                     arguments.add_argument_to_end(
                         Ident::new("blueprint_package_address", ident.span()),
-                        parse_quote!(::radix_engine_interface::prelude::PackageAddress),
+                        parse_quote!(::scrypto::prelude::PackageAddress),
                     );
                 }
 
                 let inner = if arguments.is_function() {
                     quote! {
+                        use ::sbor::Encoder;
                         let rtn = ::scrypto::prelude::ScryptoVmV1Api::blueprint_call(
                             blueprint_package_address,
                             stringify!(#blueprint_ident),
                             stringify!(#ident),
-                            ::radix_common::scrypto_args!(#(#arg_idents),*)
+                            ::scrypto::prelude::scrypto_args!(#(#arg_idents),*)
                         );
-                        ::radix_common::prelude::scrypto_decode(&rtn).unwrap()
+                        ::scrypto::prelude::scrypto_decode(&rtn).unwrap()
                     }
                 } else {
                     quote! {
+                        use ::sbor::Encoder;
                         let rtn = ::scrypto::prelude::ScryptoVmV1Api::object_call(
                             &self.0.0,
                             stringify!(#ident),
-                            ::radix_common::scrypto_args!(#(#arg_idents),*)
+                            ::scrypto::prelude::scrypto_args!(#(#arg_idents),*)
                         );
-                        ::radix_common::prelude::scrypto_decode(&rtn).unwrap()
+                        ::scrypto::prelude::scrypto_decode(&rtn).unwrap()
                     }
                 };
 
@@ -205,9 +205,9 @@ fn generate_scrypto_stub(
         .collect::<Vec<_>>();
 
     quote! {
-        #[derive(
-            ::radix_sbor_derive::ScryptoSbor,
-            ::radix_sbor_derive::ManifestSbor,
+        #[derive( 
+            ::scrypto::prelude::ScryptoSbor,
+            ::scrypto::prelude::ManifestSbor,
             Clone,
             Copy,
             Debug,
@@ -220,7 +220,7 @@ fn generate_scrypto_stub(
         #(#attributes)*
         #[sbor(transparent)]
         pub struct #struct_ident (
-            ::radix_common::prelude::Reference
+            ::scrypto::prelude::Reference
         );
 
         #(#attributes)*
@@ -228,10 +228,10 @@ fn generate_scrypto_stub(
         const _: () = {
             impl<T> From<T> for #struct_ident
             where
-                T: ::core::convert::Into<::radix_engine_interface::prelude::NodeId>
+                T: ::core::convert::Into<::scrypto::prelude::NodeId>
             {
                 fn from(value: T) -> Self {
-                    Self(::radix_common::prelude::Reference(value.into()))
+                    Self(::scrypto::prelude::Reference(value.into()))
                 }
             }
 
@@ -242,9 +242,9 @@ fn generate_scrypto_stub(
                 #(#functions)*
 
                 pub fn blueprint_id(
-                    package_address: ::radix_engine_interface::prelude::PackageAddress
-                ) -> ::radix_engine_interface::prelude::BlueprintId {
-                    ::radix_engine_interface::prelude::BlueprintId {
+                    package_address: ::scrypto::prelude::PackageAddress
+                ) -> ::scrypto::prelude::BlueprintId {
+                    ::scrypto::prelude::BlueprintId {
                         package_address,
                         blueprint_name: stringify!(#blueprint_ident).to_string()
                     }
@@ -273,7 +273,7 @@ fn generate_scrypto_test_stub(
     .iter()
     .map(|ty| -> syn::Type {
         let ty_ident = Ident::new(ty, blueprint_ident.span());
-        parse_quote!(::radix_engine_interface::prelude::#ty_ident)
+        parse_quote!(::scrypto::prelude::#ty_ident)
     })
     .map(|ty| {
         quote! {
@@ -281,7 +281,7 @@ fn generate_scrypto_test_stub(
             impl TryFrom<#struct_ident> for #ty
             {
                 type Error = <
-                    #ty as TryFrom<::radix_engine_interface::prelude::NodeId>
+                    #ty as TryFrom<::scrypto::prelude::NodeId>
                 >::Error;
 
                 fn try_from(
@@ -315,7 +315,7 @@ fn generate_scrypto_test_stub(
                 if arguments.is_function() {
                     arguments.add_argument_to_end(
                         Ident::new("blueprint_package_address", ident.span()),
-                        parse_quote!(::radix_engine_interface::prelude::PackageAddress),
+                        parse_quote!(::radix_common::prelude::PackageAddress),
                     );
                 }
                 arguments
@@ -327,7 +327,7 @@ fn generate_scrypto_test_stub(
                             blueprint_package_address,
                             stringify!(#blueprint_ident),
                             stringify!(#ident),
-                            ::radix_common::scrypto_args!(#(#arg_idents),*)
+                            ::radix_common::prelude::scrypto_args!(#(#arg_idents),*)
                         )
                         .map(|rtn| ::radix_common::prelude::scrypto_decode(&rtn).unwrap())
                     }
@@ -336,7 +336,7 @@ fn generate_scrypto_test_stub(
                         env.call_method(
                             &self.0.0,
                             stringify!(#ident),
-                            ::radix_common::scrypto_args!(#(#arg_idents),*)
+                            ::radix_common::prelude::scrypto_args!(#(#arg_idents),*)
                         )
                         .map(|rtn| ::radix_common::prelude::scrypto_decode(&rtn).unwrap())
                     }
@@ -353,7 +353,7 @@ fn generate_scrypto_test_stub(
                     pub #token_fn #ident <Y, E> ( #arguments ) -> Result<#rtn, E>
                     where
                         Y: ::radix_engine_interface::prelude::SystemApi<E>,
-                        E: radix_engine_interface::api::SystemApiError,
+                        E: ::radix_engine_interface::api::SystemApiError,
                     {
                         #inner
                     }
@@ -364,8 +364,8 @@ fn generate_scrypto_test_stub(
 
     quote! {
         #[derive(
-            ::radix_sbor_derive::ScryptoSbor,
-            ::radix_sbor_derive::ManifestSbor,
+            ::radix_common::prelude::ScryptoSbor,
+            ::radix_common::prelude::ManifestSbor,
             Clone,
             Copy,
             Debug,
@@ -378,7 +378,7 @@ fn generate_scrypto_test_stub(
         #(#attributes)*
         #[sbor(transparent)]
         pub struct #struct_ident (
-            ::radix_common::prelude::Reference
+            ::scrypto::prelude::Reference
         );
 
         #(#attributes)*
@@ -386,10 +386,10 @@ fn generate_scrypto_test_stub(
         const _: () = {
             impl<T> From<T> for #struct_ident
             where
-                T: ::core::convert::Into<::radix_engine_interface::prelude::NodeId>
+                T: ::core::convert::Into<::scrypto::prelude::NodeId>
             {
                 fn from(value: T) -> Self {
-                    Self(::radix_common::prelude::Reference(value.into()))
+                    Self(::scrypto::prelude::Reference(value.into()))
                 }
             }
 
@@ -400,9 +400,9 @@ fn generate_scrypto_test_stub(
                 #(#functions)*
 
                 pub fn blueprint_id(
-                    package_address: ::radix_engine_interface::prelude::PackageAddress
-                ) -> ::radix_engine_interface::prelude::BlueprintId {
-                    ::radix_engine_interface::prelude::BlueprintId {
+                    package_address: ::radix_common::prelude::PackageAddress
+                ) -> ::radix_common::prelude::BlueprintId {
+                    ::radix_common::prelude::BlueprintId {
                         package_address,
                         blueprint_name: stringify!(#blueprint_ident).to_string()
                     }
@@ -499,7 +499,7 @@ fn generate_manifest_builder_stub(
                     arguments.add_argument_to_beginning(
                         Ident::new("component_address", ident.span()),
                         parse_quote!(
-                            impl ::transaction::builder::ResolvableGlobalAddress
+                            impl ::radix_transactions::builder::ReferencedManifestGlobalAddress
                         ),
                     );
 
@@ -545,7 +545,7 @@ fn generate_manifest_builder_stub(
         #(#attributes)*
         #[allow(clippy::too_many_arguments, unused_mut)]
         const _: () = {
-            impl #trait_ident for ::transaction::builder::ManifestBuilder {
+            impl #trait_ident for ::radix_transactions::builder::ManifestBuilder {
                 #(#implementations)*
             }
         };
@@ -681,6 +681,7 @@ pub fn handle_blueprint_with_traits(
 
             #[allow(clippy::too_many_arguments, unused_mut)]
             const _: () = {
+
                 struct #blueprint_ident;
 
                 #[allow(unused_variables, unused_mut)]
@@ -696,7 +697,6 @@ pub fn handle_blueprint_with_traits(
         })
     }
 }
-
 #[cfg(test)]
 mod test {
     use super::*;

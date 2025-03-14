@@ -27,6 +27,7 @@ pub struct SwapEvent {
     pub trade_implied_rate: PreciseDecimal,
     pub new_implied_rate: PreciseDecimal,
     pub output: Decimal,
+    pub local_id: Option<NonFungibleLocalId>,
 }
 
 #[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]

@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "amm",
-    "yield_refractor",
+    "prism_splitter",
     "testing",
     "libraries/scrypto-interface",
     "libraries/ports-interface",

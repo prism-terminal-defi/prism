@@ -1,7 +1,7 @@
 use scrypto::prelude::*;
 use scrypto_math::*;
 use crate::structs::*;
-use yield_refractor::structs::YieldTokenData;
+use prism_splitter::structs::YieldTokenData;
 use prism_calculations::liquidity_curve::*;
 use crate::events::*;
 
@@ -11,13 +11,15 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
 #[blueprint]
 #[events(InstantiateAMMEvent, SwapEvent)]
 mod yield_amm {
-    // The associated YieldRefractor package and component which is used to verify associated PT, YT, and 
+    // The associated PrismSplitter package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
         "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
         // Stokenet
-        // "package_tdx_2_1pkxhh26q0yetjwcgfhdhwyu62pcdspavl88px2xwnlhm9n7t7uytyz",
-        YieldRefractor {
+        // "package_tdx_2_1p59fttwdx3s8hc5l7krjqaeslukvmsepq6cjyvmfkn8ugu5c02ghn4",
+        // Mainnet
+        // "package_rdx1pkg6mcr85erca2q8tm5gpe2vws93xw3d8yldkq7zjt95dr7cmp6u27",
+        PrismSplitter {
             fn tokenize(
                 &mut self, 
                 amount: FungibleBucket,
@@ -45,7 +47,11 @@ mod yield_amm {
         }
     }
 
+    // const OWNER_BADGE_RM: ResourceManager = 
+    //     resource_manager!("resource_rdx1t46v0w854tuk0wqludnzcaw7kq80aup27t6vq30289uvjgmz4z0j8c");
+
     enable_function_auth! {
+        // instantiate_yield_amm => rule!(require(OWNER_BADGE_RM.address()));
         instantiate_yield_amm => rule!(allow_all);
         retrieve_metadata => rule!(allow_all);
     }
@@ -65,16 +71,17 @@ mod yield_amm {
             compute_market => PUBLIC;
             time_to_expiry => PUBLIC;
             check_maturity => PUBLIC;
+            change_maturity_date => restrict_to: [OWNER];
             change_market_status => restrict_to: [OWNER];
             force_change_last_implied_rate => restrict_to: [OWNER];
             change_scalar_root => restrict_to: [OWNER];
-            change_yield_refractor => restrict_to: [OWNER];
+            change_prism_splitter => restrict_to: [OWNER];
         }
     }
     pub struct YieldAMM {
         /// The native pool component which manages liquidity reserves. 
         pub pool_component: Global<TwoResourcePool>,
-        pub yield_refractor_component: ComponentAddress,
+        pub prism_splitter_component: ComponentAddress,
         /// The initial scalar root of the market. This is used to calculate
         /// the scalar value. It determins the slope of the curve and becomes
         /// less sensitive as the market approaches maturity. The higher the 
@@ -99,7 +106,8 @@ mod yield_amm {
             initial_rate_anchor: PreciseDecimal,
             scalar_root: Decimal,
             market_fee_input: MarketFeeInput,
-            yt_bucketizer_address: ComponentAddress
+            prism_splitter_address: ComponentAddress,
+            dapp_definition: ComponentAddress,
         ) -> Global<YieldAMM> {
             assert!(scalar_root > Decimal::ZERO);
             assert!(market_fee_input.fee_rate > Decimal::ZERO);
@@ -113,19 +121,19 @@ mod yield_amm {
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
         
-            let yield_refractor_component: Global<YieldRefractor> = 
-                yt_bucketizer_address.into();
+            let prism_splitter_component: Global<PrismSplitter> = 
+                prism_splitter_address.into();
 
             let (market_name, market_symbol, market_icon) =
-                Self::retrieve_metadata(yield_refractor_component);
+                Self::retrieve_metadata(prism_splitter_component);
 
             let underlying_asset_address = 
-                yield_refractor_component.underlying_asset();
+                prism_splitter_component.underlying_asset();
             
             let (pt_address, yt_address) = 
-                yield_refractor_component.protocol_resources();
+                prism_splitter_component.protocol_resources();
 
-            let maturity_date = yield_refractor_component.maturity_date();
+            let maturity_date = prism_splitter_component.maturity_date();
 
             let is_current_time_less_than_maturity_date = 
                 Clock::current_time_comparison(
@@ -178,6 +186,8 @@ mod yield_amm {
                 .set_metadata("symbol", format!("lp{}", market_symbol));
             ResourceManager::from(pool_unit_address)
                 .set_metadata("icon_url", market_icon.clone());
+            ResourceManager::from(pool_unit_address)
+                .set_metadata("dapp_definition", GlobalAddress::from(dapp_definition));
 
             let market_state = MarketState {
                 total_pt: Decimal::ZERO,
@@ -222,7 +232,7 @@ mod yield_amm {
 
             Self {
                 pool_component,
-                yield_refractor_component: yield_refractor_component.address(),
+                prism_splitter_component: prism_splitter_component.address(),
                 market_fee,
                 market_state,
                 market_info: market_info.clone(),
@@ -248,7 +258,8 @@ mod yield_amm {
                         market_info.yt_address,
                     ], locked;
                     "pool_unit" => market_info.pool_unit_address, locked;
-                    "maturity_date" => maturity_date.to_string(), locked;
+                    "maturity_date" => maturity_date.to_string(), updatable;
+                    "dapp_definition" => dapp_definition, updatable;
                 }
             })
             .enable_component_royalties(
@@ -275,10 +286,11 @@ mod yield_amm {
                     compute_market => Free, updatable;
                     time_to_expiry => Free, updatable;
                     check_maturity => Free, updatable;
+                    change_maturity_date => Free, updatable;
                     change_market_status => Free, updatable;
                     force_change_last_implied_rate => Free, updatable;
                     change_scalar_root => Free, updatable;
-                    change_yield_refractor => Free, updatable;
+                    change_prism_splitter => Free, updatable;
                 }
             })
             .with_address(address_reservation)
@@ -286,24 +298,24 @@ mod yield_amm {
         }
 
         pub fn retrieve_metadata(
-            yield_refractor_component: Global<YieldRefractor>,
+            prism_splitter_component: Global<PrismSplitter>,
         ) -> (String, String, UncheckedUrl) {
         
             let market_name: String =     
-                yield_refractor_component
+                prism_splitter_component
                 .get_metadata("market_name")
                 .unwrap_or(Some("".to_string()))
                 .unwrap_or("".to_string());
             let market_symbol: String = 
-                yield_refractor_component
+                prism_splitter_component
                 .get_metadata("market_symbol")
                 .unwrap_or(Some("".to_string()))
                 .unwrap_or("".to_string());
             let market_icon: UncheckedUrl = 
-                yield_refractor_component
+                prism_splitter_component
                 .get_metadata("market_icon")
-                .unwrap_or(Some(UncheckedUrl::of("https://placeholder.com")))
-                .unwrap_or(UncheckedUrl::of("https://placeholder.com"));
+                .unwrap_or(Some(UncheckedUrl::of("https://www.prismterminal.com/assets/glowlogo.svg")))
+                .unwrap_or(UncheckedUrl::of("https://www.prismterminal.com/assets/glowlogo.svg"));
         
             (market_name, market_symbol, market_icon)
         }
@@ -570,6 +582,7 @@ mod yield_amm {
                     trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                     output: owed_asset_bucket.amount(),
+                    local_id: None,
                 }
             );
 
@@ -748,6 +761,7 @@ mod yield_amm {
                     trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                     output: owed_pt_bucket.amount(),
+                    local_id: None,
                 }
             );
 
@@ -897,6 +911,7 @@ mod yield_amm {
                     trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                     output: yt_amount_diff,
+                    local_id: Some(yt_to_return.non_fungible_local_id()),
                 }
             );
 
@@ -986,7 +1001,7 @@ mod yield_amm {
                 mut redeemed_asset_bucket, 
                 optional_yt_bucket,
                 optional_pt_bucket,
-            ) = self.get_yield_refractor_component()
+            ) = self.get_prism_splitter_component()
                     .redeem(
                         withdrawn_pt_bucket, 
                         yt_bucket, 
@@ -1056,6 +1071,14 @@ mod yield_amm {
                     time_to_expiry
                 );
 
+            let local_id = 
+                optional_yt_bucket
+                .as_ref()
+                .map(
+                    |bucket| 
+                    bucket.non_fungible_local_id()
+                );
+
             Runtime::emit_event(
                 SwapEvent {
                     timestamp: self.current_time(),
@@ -1074,6 +1097,7 @@ mod yield_amm {
                     trade_implied_rate: trade_implied_rate.exp().unwrap(),
                     new_implied_rate: new_implied_rate.exp().unwrap(),
                     output: redeemed_asset_bucket.amount(),
+                    local_id: local_id
                 }
             );
 
@@ -1293,7 +1317,7 @@ mod yield_amm {
             let (
                 pt_to_pay_back, 
                 yt_to_return
-            ) = self.get_yield_refractor_component()
+            ) = self.get_prism_splitter_component()
                     .tokenize(
                         asset_bucket, 
                         optional_yt_bucket
@@ -1415,8 +1439,8 @@ mod yield_amm {
             .unwrap()
         }
 
-        fn get_yield_refractor_component(&mut self) -> Global<YieldRefractor> {
-            self.yield_refractor_component.into()
+        fn get_prism_splitter_component(&mut self) -> Global<PrismSplitter> {
+            self.prism_splitter_component.into()
         }
 
         fn get_resource_divisibility(&self) -> u8 {
@@ -1453,6 +1477,17 @@ mod yield_amm {
             )
         }
 
+        pub fn change_maturity_date(
+            &mut self,
+            new_maturity_date: UtcDateTime
+        ) {
+            self.market_info.maturity_date = new_maturity_date;
+            Runtime::global_component().set_metadata(
+                "maturity_date", 
+                new_maturity_date.to_string()
+            );
+        }
+
         pub fn change_market_status(
             &mut self,
             status: bool,
@@ -1476,11 +1511,11 @@ mod yield_amm {
 
         }
 
-        pub fn change_yield_refractor(
+        pub fn change_prism_splitter(
             &mut self,
-            yield_refractor: ComponentAddress
+            prism_splitter: ComponentAddress
         ) {
-            self.yield_refractor_component = yield_refractor;
+            self.prism_splitter_component = prism_splitter;
         }
     }
 }

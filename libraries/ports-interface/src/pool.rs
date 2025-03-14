@@ -16,9 +16,9 @@
 // under the License.
 
 //! Defines the interface of the adapters used to communicate with pools.
-
 use scrypto::prelude::*;
 use scrypto_interface::*;
+use scrypto::prelude::sbor;
 
 define_interface! {
     PoolAdapter impl [
@@ -26,28 +26,25 @@ define_interface! {
         Trait,
         #[cfg(feature = "scrypto-stubs")]
         ScryptoStub,
-        #[cfg(feature = "scrypto-test-stubs")]
-        ScryptoTestStub,
+        // #[cfg(feature = "scrypto-test-stubs")]
+        // ScryptoTestStub,
     ] {
         fn get_redemption_value(
             &self,
-            pool_address: i64,
-            amount: i64,
-        ) -> i64;
+            pool_address: ComponentAddress, 
+            asset_amount: Decimal
+        ) -> Decimal;
 
-        fn total_stake_amount(
+        fn calc_asset_owed_amount(
             &self,
-            pool_address: i64,
-        ) -> i64;
+            pool_address: ComponentAddress,
+            redemption_amount: Decimal
+        ) -> Decimal;
 
-        fn total_stake_unit_supply(
-            &self,
-            pool_address: i64,
-        ) -> i64;
+        fn total_stake_amount(&self, pool_address: ComponentAddress) -> Decimal;
 
-        fn resource_addresses(
-            &mut self,
-            pool_address: i64
-        ) -> (i64, i64);
+        fn total_stake_unit_supply(&self, pool_address: ComponentAddress) -> Decimal;
+
+        fn stake_unit_resource_address(&self, pool_address: ComponentAddress) -> ResourceAddress;
     }
 }
