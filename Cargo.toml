@@ -3,10 +3,11 @@ resolver = "2"
 members = [
     "amm",
     "prism_splitter",
+    "prism_splitter_v2",
     "testing",
     "libraries/scrypto-interface",
     "libraries/ports-interface",
-    "libraries/ociswap-v2-adapter-v1"
+    "libraries/lsulp-adapter-v1"
 ]
 
 [workspace.package]

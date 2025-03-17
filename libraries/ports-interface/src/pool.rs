@@ -29,22 +29,18 @@ define_interface! {
         // #[cfg(feature = "scrypto-test-stubs")]
         // ScryptoTestStub,
     ] {
-        fn get_redemption_value(
-            &self,
-            pool_address: ComponentAddress, 
-            asset_amount: Decimal
-        ) -> Decimal;
+        fn get_redemption_value(&self, asset_amount: Decimal) -> Decimal;
 
-        fn calc_asset_owed_amount(
-            &self,
-            pool_address: ComponentAddress,
-            redemption_amount: Decimal
-        ) -> Decimal;
+        fn calc_asset_owed_amount(&self, redemption_amount: Decimal) -> Decimal;
 
-        fn total_stake_amount(&self, pool_address: ComponentAddress) -> Decimal;
+        fn total_stake_amount(&self) -> Decimal;
 
-        fn total_stake_unit_supply(&self, pool_address: ComponentAddress) -> Decimal;
+        fn total_stake_unit_supply(&self) -> Decimal;
 
-        fn stake_unit_resource_address(&self, pool_address: ComponentAddress) -> ResourceAddress;
+        fn stake_unit_resource_address(&self) -> ResourceAddress;
+
+        fn pool_address(&self) -> ComponentAddress;
+
+        fn get_redemption_factor(&self) -> Decimal;
     }
 }
