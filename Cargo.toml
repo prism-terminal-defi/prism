@@ -4,10 +4,11 @@ members = [
     "amm",
     "prism_splitter",
     "prism_splitter_v2",
+    "lsulp-adapter-v1",
+    "validator_adapter_v1",
     "testing",
     "libraries/scrypto-interface",
     "libraries/ports-interface",
-    "libraries/lsulp-adapter-v1"
 ]
 
 [workspace.package]
