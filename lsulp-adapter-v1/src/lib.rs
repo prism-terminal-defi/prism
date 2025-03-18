@@ -22,27 +22,6 @@ use ports_interface::pool::*;
 use scrypto::prelude::*;
 use scrypto_interface::*;
 
-
-// macro_rules! define_error {
-//     (
-//         $(
-//             $name: ident => $item: expr;
-//         )*
-//     ) => {
-//         $(
-//             pub const $name: &'static str = concat!("[ValidatorAdapter]", " ", $item);
-//         )*
-//     };
-// }
-
-// define_error! {
-//     RESOURCE_DOES_NOT_BELONG_ERROR
-//         => "One or more of the resources do not belong to pool.";
-//     OVERFLOW_ERROR => "Calculation overflowed.";
-//     UNEXPECTED_ERROR => "Unexpected error.";
-//     INVALID_NUMBER_OF_BUCKETS => "Invalid number of buckets.";
-// }
-
 macro_rules! pool {
     ($address: expr) => {
         $crate::blueprint_interface::CaviarLsuPoolInterfaceScryptoStub::from(
@@ -56,6 +35,20 @@ pub const NUMBER_VALIDATOR_PRICES_TO_UPDATE: u32 = 5;
 #[blueprint_with_traits]
 pub mod adapter {
     use scrypto::prelude::sbor;
+
+    enable_method_auth! {
+        methods {
+            change_pool_address => restrict_to: [OWNER];
+            get_redemption_value => PUBLIC;
+            calc_asset_owed_amount => PUBLIC;
+            total_stake_amount => PUBLIC;
+            total_stake_unit_supply => PUBLIC;
+            stake_unit_resource_address => PUBLIC;
+            get_redemption_factor => PUBLIC;
+            pool_address => PUBLIC;
+        }
+    }
+
     struct CaviarLsuPoolAdapter {
         pool_address: ComponentAddress
     }
