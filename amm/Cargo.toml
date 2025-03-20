@@ -7,7 +7,7 @@ edition.workspace = true
 scrypto = { workspace = true }
 scrypto_math = { workspace = true}
 prism-calculations = { workspace = true }
-prism_splitter = { path = "../prism_splitter" }
+prism_splitter_v2 = { path = "../prism_splitter_v2" }
 
 [dev-dependencies]
 scrypto-test = { version = "1.3.0" }

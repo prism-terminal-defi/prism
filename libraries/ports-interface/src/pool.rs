@@ -26,8 +26,8 @@ define_interface! {
         Trait,
         #[cfg(feature = "scrypto-stubs")]
         ScryptoStub,
-        // #[cfg(feature = "scrypto-test-stubs")]
-        // ScryptoTestStub,
+        #[cfg(feature = "scrypto-test-stubs")]
+        ScryptoTestStub,
     ] {
         fn get_redemption_value(&self, asset_amount: Decimal) -> Decimal;
 

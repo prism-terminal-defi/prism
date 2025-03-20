@@ -22,6 +22,7 @@ use scrypto_interface::*;
 define_interface! {
     LsuPool as CaviarLsuPool impl [
         ScryptoStub,
+        ScryptoTestStub,
     ] {
         fn new(
             admin_badge_resource_address: ResourceAddress,

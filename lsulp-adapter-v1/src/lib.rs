@@ -83,7 +83,6 @@ pub mod adapter {
             .globalize()
         }
 
-        // Remember to put auth in this.
         pub fn change_pool_address(&mut self, new_pool_address: ComponentAddress) {
             self.pool_address = new_pool_address;
         }
@@ -117,12 +116,11 @@ pub mod adapter {
 
         fn calc_asset_owed_amount(
             &self,
-            redemption_amount: Decimal
+            amount: Decimal
         ) -> Decimal {
-            // Note: self.get_redemption_factor() should already update DEX valuation
             let redemption_factor = self.get_redemption_factor();
 
-            redemption_amount
+            amount
             .checked_div(redemption_factor)
             .expect("[CaviarLsuPoolAdapter] Asset owed calculation failed")
         }

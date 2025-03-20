@@ -25,7 +25,7 @@ name = "amm"
 version = "0.1.0"
 dependencies = [
  "prism-calculations",
- "prism_splitter",
+ "prism_splitter_v2",
  "radix-transactions 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "scrypto",
  "scrypto-test",
@@ -949,15 +949,6 @@ dependencies = [
  "scrypto_math",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "prism_splitter"
-version = "0.1.0"
-dependencies = [
- "radix-transactions 1.3.0 (git+https://github.com/radixdlt/radixdlt-scrypto?tag=v1.3.0)",
- "scrypto",
- "scrypto-test",
 ]
 
 [[package]]
@@ -1943,10 +1934,11 @@ version = "0.1.0"
 dependencies = [
  "amm",
  "prism-calculations",
- "prism_splitter",
+ "prism_splitter_v2",
  "scrypto",
  "scrypto-test",
  "scrypto_math",
+ "validator_adapter_v1",
 ]
 
 [[package]]
@@ -2062,7 +2054,7 @@ dependencies = [
  "sbor 1.3.0 (git+https://github.com/radixdlt/radixdlt-scrypto?tag=v1.3.0)",
  "scrypto",
  "scrypto-interface",
- "scrypto_math",
+ "scrypto-test",
 ]
 
 [[package]]

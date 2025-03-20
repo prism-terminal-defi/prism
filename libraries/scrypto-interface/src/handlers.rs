@@ -315,7 +315,7 @@ fn generate_scrypto_test_stub(
                 if arguments.is_function() {
                     arguments.add_argument_to_end(
                         Ident::new("blueprint_package_address", ident.span()),
-                        parse_quote!(::radix_common::prelude::PackageAddress),
+                        parse_quote!(::scrypto::prelude::PackageAddress),
                     );
                 }
                 arguments
@@ -327,18 +327,18 @@ fn generate_scrypto_test_stub(
                             blueprint_package_address,
                             stringify!(#blueprint_ident),
                             stringify!(#ident),
-                            ::radix_common::prelude::scrypto_args!(#(#arg_idents),*)
+                            ::scrypto::prelude::scrypto_args!(#(#arg_idents),*)
                         )
-                        .map(|rtn| ::radix_common::prelude::scrypto_decode(&rtn).unwrap())
+                        .map(|rtn| scrypto::prelude::scrypto_decode(&rtn).unwrap())
                     }
                 } else {
                     quote! {
                         env.call_method(
                             &self.0.0,
                             stringify!(#ident),
-                            ::radix_common::prelude::scrypto_args!(#(#arg_idents),*)
+                            ::scrypto::prelude::scrypto_args!(#(#arg_idents),*)
                         )
-                        .map(|rtn| ::radix_common::prelude::scrypto_decode(&rtn).unwrap())
+                        .map(|rtn| scrypto::prelude::scrypto_decode(&rtn).unwrap())
                     }
                 };
 
@@ -352,8 +352,10 @@ fn generate_scrypto_test_stub(
                     #[allow(clippy::too_many_arguments)]
                     pub #token_fn #ident <Y, E> ( #arguments ) -> Result<#rtn, E>
                     where
-                        Y: ::radix_engine_interface::prelude::SystemApi<E>,
-                        E: ::radix_engine_interface::api::SystemApiError,
+                        // Y: ::radix_engine_interface::prelude::SystemApi<E>,
+                        // E: ::radix_engine_interface::api::SystemApiError,
+                        Y: ::scrypto::prelude::SystemApi<E>,
+                        E: ::scrypto::prelude::SystemApiError,
                     {
                         #inner
                     }
@@ -364,8 +366,8 @@ fn generate_scrypto_test_stub(
 
     quote! {
         #[derive(
-            ::radix_common::prelude::ScryptoSbor,
-            ::radix_common::prelude::ManifestSbor,
+            ::scrypto::prelude::ScryptoSbor,
+            ::scrypto::prelude::ManifestSbor,
             Clone,
             Copy,
             Debug,
@@ -400,9 +402,9 @@ fn generate_scrypto_test_stub(
                 #(#functions)*
 
                 pub fn blueprint_id(
-                    package_address: ::radix_common::prelude::PackageAddress
-                ) -> ::radix_common::prelude::BlueprintId {
-                    ::radix_common::prelude::BlueprintId {
+                    package_address: ::scrypto::prelude::PackageAddress
+                ) -> ::scrypto::prelude::BlueprintId {
+                    ::scrypto::prelude::BlueprintId {
                         package_address,
                         blueprint_name: stringify!(#blueprint_ident).to_string()
                     }
@@ -437,12 +439,12 @@ fn generate_manifest_builder_stub(
                 if arguments.is_function() {
                     arguments.add_argument_to_beginning(
                         Ident::new("blueprint_package_address", ident.span()),
-                        parse_quote!(::radix_engine_interface::prelude::PackageAddress),
+                        parse_quote!(::scrypto::prelude::PackageAddress),
                     );
                 } else {
                     arguments.add_argument_to_beginning(
                         Ident::new("component_address", ident.span()),
-                        parse_quote!(impl ::transaction::builder::ResolvableGlobalAddress),
+                        parse_quote!(impl ::radix_transactions::builder::ResolvableGlobalAddress),
                     );
                 }
 
@@ -477,7 +479,7 @@ fn generate_manifest_builder_stub(
                     arguments.add_argument_to_beginning(
                         Ident::new("blueprint_package_address", ident.span()),
                         parse_quote!(
-                            ::radix_engine_interface::prelude::PackageAddress
+                            ::scrypto::prelude::PackageAddress
                         ),
                     );
 

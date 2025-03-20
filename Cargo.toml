@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "amm",
-    "prism_splitter",
     "prism_splitter_v2",
     "lsulp-adapter-v1",
     "validator_adapter_v1",

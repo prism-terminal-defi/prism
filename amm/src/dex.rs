@@ -1,7 +1,7 @@
 use scrypto::prelude::*;
 use scrypto_math::*;
 use crate::structs::*;
-use prism_splitter::structs::YieldTokenData;
+use prism_splitter_v2::structs::YieldTokenData;
 use prism_calculations::liquidity_curve::*;
 use crate::events::*;
 
@@ -19,7 +19,7 @@ mod yield_amm {
         // "package_tdx_2_1p59fttwdx3s8hc5l7krjqaeslukvmsepq6cjyvmfkn8ugu5c02ghn4",
         // Mainnet
         // "package_rdx1pkg6mcr85erca2q8tm5gpe2vws93xw3d8yldkq7zjt95dr7cmp6u27",
-        PrismSplitter {
+        PrismSplitterV2 {
             fn tokenize(
                 &mut self, 
                 amount: FungibleBucket,
@@ -42,7 +42,7 @@ mod yield_amm {
             fn pt_address(&self) -> ResourceAddress;
             fn yt_address(&self) -> ResourceAddress;
             fn underlying_asset(&self) -> ResourceAddress;
-            fn maturity_date(&self) -> UtcDateTime;
+            fn get_maturity_date(&self) -> UtcDateTime;
             fn protocol_resources(&self) -> (ResourceAddress, ResourceAddress);
         }
     }
@@ -121,7 +121,7 @@ mod yield_amm {
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
         
-            let prism_splitter_component: Global<PrismSplitter> = 
+            let prism_splitter_component: Global<PrismSplitterV2> = 
                 prism_splitter_address.into();
 
             let (market_name, market_symbol, market_icon) =
@@ -133,7 +133,7 @@ mod yield_amm {
             let (pt_address, yt_address) = 
                 prism_splitter_component.protocol_resources();
 
-            let maturity_date = prism_splitter_component.maturity_date();
+            let maturity_date = prism_splitter_component.get_maturity_date();
 
             let is_current_time_less_than_maturity_date = 
                 Clock::current_time_comparison(
@@ -298,7 +298,7 @@ mod yield_amm {
         }
 
         pub fn retrieve_metadata(
-            prism_splitter_component: Global<PrismSplitter>,
+            prism_splitter_component: Global<PrismSplitterV2>,
         ) -> (String, String, UncheckedUrl) {
         
             let market_name: String =     
@@ -1439,7 +1439,7 @@ mod yield_amm {
             .unwrap()
         }
 
-        fn get_prism_splitter_component(&mut self) -> Global<PrismSplitter> {
+        fn get_prism_splitter_component(&mut self) -> Global<PrismSplitterV2> {
             self.prism_splitter_component.into()
         }
 
