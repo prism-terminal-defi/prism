@@ -86,6 +86,15 @@ pub mod adapter {
         pub fn change_pool_address(&mut self, new_pool_address: ComponentAddress) {
             self.pool_address = new_pool_address;
         }
+
+        fn underlying_asset_divisibility(&self) -> u8 {
+            ResourceManager::from(
+                self.stake_unit_resource_address()
+            )
+            .resource_type()
+            .divisibility()
+            .expect("[CaviarLsuPoolAdapter] Invalid resource divisibility")
+        }
     }
 
     impl PoolAdapterInterfaceTrait for CaviarLsuPoolAdapter {
@@ -93,36 +102,52 @@ pub mod adapter {
             &self,
             asset_amount: Decimal,
         ) -> Decimal {
-            let mut caviar_pool = pool!(self.pool_address);
-            caviar_pool.update_multiple_validator_prices(NUMBER_VALIDATOR_PRICES_TO_UPDATE);
+            let resource_divisibility = 
+                self.underlying_asset_divisibility();
 
-            let liquidity_token_total_supply = 
-                caviar_pool
-                .get_liquidity_token_total_supply();
+            let redemption_factor = self.get_redemption_factor();
 
-            let dex_valuation = caviar_pool.get_dex_valuation_xrd();
+            let redemption_value = 
+                PreciseDecimal::from(redemption_factor)
+                .checked_mul(PreciseDecimal::from(asset_amount))
+                .expect("[CaviarLsuPoolAdapter] Redemption value calculation failed");
 
-            assert!(
-                dex_valuation > Decimal::ZERO && 
-                liquidity_token_total_supply > Decimal::ZERO,
-                "Invalid pool state"
-            );
-
-            dex_valuation
-            .checked_div(liquidity_token_total_supply)
-            .and_then(|x| x.checked_mul(asset_amount))
-            .expect("[CaviarLsuPoolAdapter] Redemption value calculation failed")
+            redemption_value
+            .checked_round(
+                resource_divisibility,
+                RoundingMode::ToNearestMidpointToEven
+            )
+            .and_then(
+                |x|
+                Decimal::try_from(x).ok()
+            )
+            .expect("[CaviarLsuPoolAdapter] Rounding redemption value failed")
         }
 
         fn calc_asset_owed_amount(
             &self,
             amount: Decimal
         ) -> Decimal {
+            let resource_divisibility = 
+                self.underlying_asset_divisibility();
+
             let redemption_factor = self.get_redemption_factor();
 
-            amount
-            .checked_div(redemption_factor)
-            .expect("[CaviarLsuPoolAdapter] Asset owed calculation failed")
+            let amount_owed = 
+                PreciseDecimal::from(amount)
+                .checked_div(PreciseDecimal::from(redemption_factor))
+                .expect("[CaviarLsuPoolAdapter] Asset owed calculation failed");
+
+            amount_owed
+            .checked_round(
+                resource_divisibility,
+                RoundingMode::ToNearestMidpointToEven
+            )
+            .and_then(
+                |x|
+                Decimal::try_from(x).ok()
+            )
+            .expect("[CaviarLsuPoolAdapter] Rounding owed amount failed")
         }
 
         fn total_stake_amount(&self) -> Decimal {

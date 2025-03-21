@@ -102,8 +102,6 @@ define_interface! {
             bucket: Bucket, // mut bucket
             lsu_paying: ResourceAddress,
         ) -> (Bucket, Bucket);
-
-
     }
 }
 

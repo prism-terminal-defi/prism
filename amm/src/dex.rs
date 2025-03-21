@@ -108,6 +108,7 @@ mod yield_amm {
             market_fee_input: MarketFeeInput,
             prism_splitter_address: ComponentAddress,
             dapp_definition: ComponentAddress,
+            address_reservation: Option<GlobalAddressReservation>,
         ) -> Global<YieldAMM> {
             assert!(scalar_root > Decimal::ZERO);
             assert!(market_fee_input.fee_rate > Decimal::ZERO);
@@ -117,7 +118,19 @@ mod yield_amm {
             );
 
             let (address_reservation, component_address) =
-                Runtime::allocate_component_address(YieldAMM::blueprint_id());
+                if address_reservation.is_some() {
+                    let address_reservation = address_reservation.unwrap();
+                    let component_address = 
+                        ComponentAddress::try_from(
+                            Runtime::get_reservation_address(&address_reservation))
+                        .ok()
+                        .unwrap();
+
+                    (address_reservation, component_address)
+                } else { 
+                    Runtime::allocate_component_address(YieldAMM::blueprint_id())
+                };
+
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
         
@@ -1007,10 +1020,14 @@ mod yield_amm {
                         yt_bucket, 
                         amount_yt_to_swap_in
                     );
+
+            // let adjusted_asset_owed_for_pt_flash_swap =
+            //     asset_owed_for_pt_flash_swap
+            //     .min(redeemed_asset_bucket.amount());
         
             let asset_owed = 
                 redeemed_asset_bucket
-                .take(asset_owed_for_pt_flash_swap);
+                .take(adjusted_asset_owed_for_pt_flash_swap);
 
             let yt_exchange_rate =
                 redeemed_asset_bucket.amount()
