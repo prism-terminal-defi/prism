@@ -1,7 +1,6 @@
 use scrypto::prelude::*;
 use scrypto_math::*;
 use crate::structs::*;
-use prism_splitter_v2::structs::YieldTokenData;
 use prism_calculations::liquidity_curve::*;
 use crate::events::*;
 
@@ -11,14 +10,14 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
 #[blueprint]
 #[events(InstantiateAMMEvent, SwapEvent)]
 mod yield_amm {
-    // The associated PrismSplitter package and component which is used to verify associated PT, YT, and 
+    // The associated PrismSplitterV2 package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
     extern_blueprint! {
-        "package_sim1p4nhxvep6a58e88tysfu0zkha3nlmmcp6j8y5gvvrhl5aw47jfsxlt",
+        // "package_sim1p4rcnrz0sjnh0e9klyf7atedfmtgghkdn5fd5tefpyrtt7tcjwv7th",
         // Stokenet
         // "package_tdx_2_1p59fttwdx3s8hc5l7krjqaeslukvmsepq6cjyvmfkn8ugu5c02ghn4",
         // Mainnet
-        // "package_rdx1pkg6mcr85erca2q8tm5gpe2vws93xw3d8yldkq7zjt95dr7cmp6u27",
+        "package_rdx1pkg6mcr85erca2q8tm5gpe2vws93xw3d8yldkq7zjt95dr7cmp6u27",
         PrismSplitterV2 {
             fn tokenize(
                 &mut self, 
@@ -36,23 +35,26 @@ mod yield_amm {
                     Option<NonFungibleBucket>,
                     Option<FungibleBucket>,
                 );
+            fn claim_yield(&mut self, yt_bucket: NonFungibleBucket) -> (FungibleBucket, Option<NonFungibleBucket>);
             fn get_pt_redemption_value(&self, amount: Decimal) -> Decimal;
             fn get_underlying_asset_redemption_value(&self, amount: Decimal) -> Decimal;
             fn get_underlying_asset_redemption_factor(&self) -> Decimal;
             fn pt_address(&self) -> ResourceAddress;
             fn yt_address(&self) -> ResourceAddress;
             fn underlying_asset(&self) -> ResourceAddress;
-            fn get_maturity_date(&self) -> UtcDateTime;
+            fn maturity_date(&self) -> UtcDateTime;
             fn protocol_resources(&self) -> (ResourceAddress, ResourceAddress);
         }
     }
 
-    // const OWNER_BADGE_RM: ResourceManager = 
-    //     resource_manager!("resource_rdx1t46v0w854tuk0wqludnzcaw7kq80aup27t6vq30289uvjgmz4z0j8c");
+    const OWNER_BADGE_RM: ResourceManager = 
+        resource_manager!("resource_rdx1tk4zl8p0wzh0g3f39adzv37xg7jmgm0th7q6ud78wv48nffzlsvrch");
 
     enable_function_auth! {
-        // instantiate_yield_amm => rule!(require(OWNER_BADGE_RM.address()));
-        instantiate_yield_amm => rule!(allow_all);
+        instantiate_yield_amm => rule!(require(OWNER_BADGE_RM.address()));
+        instantiate_yield_amm_with_existing => rule!(require(OWNER_BADGE_RM.address()));
+        // instantiate_yield_amm => rule!(allow_all);
+        // instantiate_yield_amm_with_existing => rule!(allow_all);
         retrieve_metadata => rule!(allow_all);
     }
 
@@ -71,16 +73,20 @@ mod yield_amm {
             compute_market => PUBLIC;
             time_to_expiry => PUBLIC;
             check_maturity => PUBLIC;
+            create_pool_manager_proof => restrict_to: [SELF, OWNER];
+            withdraw_pool_manager_badge => restrict_to: [OWNER];
             change_maturity_date => restrict_to: [OWNER];
             change_market_status => restrict_to: [OWNER];
             force_change_last_implied_rate => restrict_to: [OWNER];
             change_scalar_root => restrict_to: [OWNER];
             change_prism_splitter => restrict_to: [OWNER];
+            change_pool_component => restrict_to: [OWNER];
         }
     }
     pub struct YieldAMM {
         /// The native pool component which manages liquidity reserves. 
         pub pool_component: Global<TwoResourcePool>,
+        pub pool_manager_access_controller: Global<AccessController>,
         pub prism_splitter_component: ComponentAddress,
         /// The initial scalar root of the market. This is used to calculate
         /// the scalar value. It determins the slope of the curve and becomes
@@ -92,6 +98,7 @@ mod yield_amm {
         pub market_info: MarketInfo,
         pub pool_stat: PoolStat,
         pub market_is_active: bool,
+        pub pool_manager_vault: FungibleVault,
     }
 
     impl YieldAMM {
@@ -107,7 +114,9 @@ mod yield_amm {
             scalar_root: Decimal,
             market_fee_input: MarketFeeInput,
             prism_splitter_address: ComponentAddress,
+            pool_manager_access_controller: Global<AccessController>,
             dapp_definition: ComponentAddress,
+            pool_manager_badge: FungibleBucket,
             address_reservation: Option<GlobalAddressReservation>,
         ) -> Global<YieldAMM> {
             assert!(scalar_root > Decimal::ZERO);
@@ -117,19 +126,18 @@ mod yield_amm {
                 && market_fee_input.reserve_fee_percent < Decimal::ONE
             );
 
-            let (address_reservation, component_address) =
-                if address_reservation.is_some() {
-                    let address_reservation = address_reservation.unwrap();
+            let (address_reservation, component_address) = match address_reservation {
+                Some(address_reservation) => {
                     let component_address = 
                         ComponentAddress::try_from(
                             Runtime::get_reservation_address(&address_reservation))
                         .ok()
-                        .unwrap();
+                        .expect("[instantiate_yield_amm] Failed to convert address reservation to component address");
 
                     (address_reservation, component_address)
-                } else { 
-                    Runtime::allocate_component_address(YieldAMM::blueprint_id())
-                };
+                },
+                None => Runtime::allocate_component_address(YieldAMM::blueprint_id()),
+            };
 
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
@@ -146,7 +154,7 @@ mod yield_amm {
             let (pt_address, yt_address) = 
                 prism_splitter_component.protocol_resources();
 
-            let maturity_date = prism_splitter_component.get_maturity_date();
+            let maturity_date = prism_splitter_component.maturity_date();
 
             let is_current_time_less_than_maturity_date = 
                 Clock::current_time_comparison(
@@ -191,7 +199,7 @@ mod yield_amm {
             let pool_unit_address = 
                 ResourceAddress::try_from(pool_unit_global_address)
                 .ok()
-                .unwrap(); 
+                .expect("[instantiate_yield_amm] Failed to convert pool unit global address to resource address"); 
             
             ResourceManager::from(pool_unit_address)
                 .set_metadata("name", format!("LP {}", market_name));
@@ -222,7 +230,7 @@ mod yield_amm {
                 PreciseDecimal::from(
                     market_fee_input.fee_rate
                     .ln()
-                    .unwrap()
+                    .expect("[instantiate_yield_amm] Failed to calculate fee rate")
                 );
 
             let market_fee = MarketFee {
@@ -246,11 +254,13 @@ mod yield_amm {
             Self {
                 pool_component,
                 prism_splitter_component: prism_splitter_component.address(),
+                pool_manager_access_controller,
                 market_fee,
                 market_state,
                 market_info: market_info.clone(),
                 pool_stat,
                 market_is_active: true,
+                pool_manager_vault: FungibleVault::with_bucket(pool_manager_badge),
             }
             .instantiate()
             .prepare_to_globalize(owner_role)
@@ -286,6 +296,8 @@ mod yield_amm {
                     royalty_claimer_updater => OWNER;
                 },
                 init {
+                    create_pool_manager_proof => Free, updatable;
+                    withdraw_pool_manager_badge => Free, updatable;
                     set_initial_ln_implied_rate => Free, updatable;
                     get_market_implied_rate => Free, updatable;
                     get_vault_reserves => Free, updatable;
@@ -304,9 +316,175 @@ mod yield_amm {
                     force_change_last_implied_rate => Free, updatable;
                     change_scalar_root => Free, updatable;
                     change_prism_splitter => Free, updatable;
+                    change_pool_component => Free, updatable;
                 }
             })
             .with_address(address_reservation)
+            .globalize()
+        }
+
+        pub fn instantiate_yield_amm_with_existing(
+            owner_role_node: CompositeRequirement,
+            last_ln_implied_rate: PreciseDecimal,
+            scalar_root: Decimal,
+            market_fee_input: MarketFeeInput,
+            pool_component: Global<TwoResourcePool>,
+            pool_manager_access_controller: Global<AccessController>,
+            prism_splitter_address: ComponentAddress,
+            dapp_definition: ComponentAddress,
+            pool_manager_badge: FungibleBucket,
+            address_reservation: Option<GlobalAddressReservation>,
+        ) -> Global<YieldAMM> {
+            assert!(scalar_root > Decimal::ZERO);
+            assert!(market_fee_input.fee_rate > Decimal::ZERO);
+            assert!(
+                market_fee_input.reserve_fee_percent > Decimal::ZERO 
+                && market_fee_input.reserve_fee_percent < Decimal::ONE
+            );
+
+            let (address_reservation, component_address) = match address_reservation {
+                Some(address_reservation) => {
+                    let component_address = 
+                        ComponentAddress::try_from(
+                            Runtime::get_reservation_address(&address_reservation))
+                        .ok()
+                        .expect("[instantiate_yield_amm] Failed to convert address reservation to component address");
+
+                    (address_reservation, component_address)
+                },
+                None => Runtime::allocate_component_address(YieldAMM::blueprint_id()),
+            };
+
+            let global_component_caller_badge =
+                NonFungibleGlobalId::global_caller_badge(component_address);
+        
+            let prism_splitter_component: Global<PrismSplitterV2> = 
+                prism_splitter_address.into();
+
+            let (market_name, market_symbol, market_icon) =
+                Self::retrieve_metadata(prism_splitter_component);
+
+            let underlying_asset_address = 
+                prism_splitter_component.underlying_asset();
+            
+            let (pt_address, yt_address) = 
+                prism_splitter_component.protocol_resources();
+
+            let maturity_date = prism_splitter_component.maturity_date();
+
+            let is_current_time_less_than_maturity_date = 
+                Clock::current_time_comparison(
+                    maturity_date.to_instant(), 
+                    TimePrecisionV2::Second, 
+                    TimeComparisonOperator::Lt
+                );
+
+            assert_eq!(
+                is_current_time_less_than_maturity_date, 
+                true,
+                "Market has expired!"
+            );
+
+            let combined_rule_node = 
+                owner_role_node
+                .or(CompositeRequirement::from(global_component_caller_badge))
+                .or(CompositeRequirement::from(Runtime::package_token()));
+
+            let owner_role = 
+                OwnerRole::Updatable(
+                    AccessRule::from(
+                        combined_rule_node.clone()
+                    )
+                );
+
+            let pool_unit_global_address: GlobalAddress = 
+                pool_component
+                .get_metadata("pool_unit")
+                .unwrap()
+                .unwrap();
+
+            let pool_unit_address = 
+                ResourceAddress::try_from(pool_unit_global_address)
+                .ok()
+                .expect("[instantiate_yield_amm] Failed to convert pool unit global address to resource address"); 
+
+            let market_state = MarketState {
+                total_pt: Decimal::ZERO,
+                total_asset: Decimal::ZERO,
+                initial_rate_anchor: last_ln_implied_rate,
+                scalar_root,
+                last_ln_implied_rate: last_ln_implied_rate,
+            };
+
+
+            let market_info = MarketInfo {
+                maturity_date,
+                underlying_asset_address,
+                pt_address,
+                yt_address,
+                pool_unit_address,
+            };
+
+            let fee_rate = 
+                PreciseDecimal::from(
+                    market_fee_input.fee_rate
+                    .ln()
+                    .expect("[instantiate_yield_amm] Failed to calculate fee rate")
+                );
+            
+            let market_fee = MarketFee {
+                fee_rate,
+                reserve_fee_percent: market_fee_input.reserve_fee_percent
+            };
+
+            let pool_stat = PoolStat {
+                trading_fees_collected: PreciseDecimal::ZERO,
+                reserve_fees_collected: PreciseDecimal::ZERO,
+                total_fees_collected: PreciseDecimal::ZERO,
+            };
+
+            Runtime::emit_event(
+                InstantiateAMMEvent {
+                    market_state: market_state.clone(),
+                    market_fee: market_fee.clone()
+                }
+            );
+
+            Self {
+                pool_component,
+                prism_splitter_component: prism_splitter_component.address(),
+                pool_manager_access_controller,
+                market_fee,
+                market_state,
+                market_info: market_info.clone(),
+                pool_stat,
+                market_is_active: true,
+                pool_manager_vault: FungibleVault::with_bucket(pool_manager_badge),
+            }
+            .instantiate()
+            .prepare_to_globalize(owner_role)
+            .with_address(address_reservation)
+            .metadata(metadata! {
+                roles {
+                    metadata_locker => OWNER;
+                    metadata_locker_updater => OWNER;
+                    metadata_setter => OWNER;
+                    metadata_setter_updater => OWNER;
+                },
+                init {
+                    "market_name" => market_name, updatable;
+                    "symbol" => market_symbol, updatable;
+                    "icon_url" => market_icon, updatable;
+                    "market_resources" => vec![
+                        market_info.underlying_asset_address,
+                        market_info.pt_address,
+                        market_info.yt_address,
+                    ], locked;
+                    "pool_unit" => market_info.pool_unit_address, locked;
+                    "maturity_date" => maturity_date.to_string(), updatable;
+                    "dapp_definition" => dapp_definition, updatable;
+                }
+            })
             .globalize()
         }
 
@@ -331,6 +509,20 @@ mod yield_amm {
                 .unwrap_or(UncheckedUrl::of("https://www.prismterminal.com/assets/glowlogo.svg"));
         
             (market_name, market_symbol, market_icon)
+        }
+
+        pub fn create_pool_manager_proof(&mut self) -> Proof {
+            self.pool_manager_vault
+            .authorize_with_amount(
+                dec!(1), 
+                || {
+                    self.pool_manager_access_controller.create_proof()
+                }
+            )
+        }
+
+        pub fn withdraw_pool_manager_badge(&mut self) -> FungibleBucket {
+            self.pool_manager_vault.take(dec!(1))
         }
 
         // First set the natural log of the implied rate here.
@@ -429,14 +621,20 @@ mod yield_amm {
         ) {
             self.assert_market_not_expired();
 
+            let pool_manager_proof = self.create_pool_manager_proof();
+
+            LocalAuthZone::push(pool_manager_proof);
+
             let (pool_unit, remainder) = 
                 self.pool_component
                     .contribute(
                         (pt_bucket.into(), asset_bucket.into())
                     );
+                
+            LocalAuthZone::drop_proofs();
 
             // Initialize Market State if not already initialized
-            if self.market_state.last_ln_implied_rate == PreciseDecimal::ZERO {
+            if self.market_state.last_ln_implied_rate.is_zero() {
 
                 //-----------------------------------------------------------------------
                 // STATE CHANGES
@@ -523,13 +721,16 @@ mod yield_amm {
             let all_in_exchange_rate = 
                 pt_bucket.amount()
                 .checked_div(asset_to_account)
-                .unwrap();
+                .expect("[swap_exact_pt_for_asset] Overflow in all in exchange rate");
 
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
 
+            let pool_manager_proof = self.create_pool_manager_proof();
+            LocalAuthZone::push(pool_manager_proof);
             self.pool_component.protected_deposit(pt_bucket.into());
+            
 
             let owed_asset_bucket = 
                 self.pool_component.protected_withdraw(
@@ -537,6 +738,8 @@ mod yield_amm {
                     asset_to_account, 
                     WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
                 );
+
+            LocalAuthZone::drop_proofs();
 
             self.update_pool_stat(
                 trading_fees,
@@ -592,8 +795,8 @@ mod yield_amm {
                     trading_fees,
                     total_fees,
                     effective_implied_rate,
-                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
+                    trade_implied_rate: trade_implied_rate.exp().unwrap_or(PreciseDecimal::ZERO),
+                    new_implied_rate: new_implied_rate.exp().unwrap_or(PreciseDecimal::ZERO),
                     output: owed_asset_bucket.amount(),
                     local_id: None,
                 }
@@ -697,7 +900,7 @@ mod yield_amm {
             let all_in_exchange_rate =
                 desired_pt_amount
                 .checked_div(required_asset_amount)
-                .unwrap();
+                .expect("[swap_exact_asset_for_pt] Overflow in all in exchange rate");
 
             // Only need to take the required Asset, return the rest.
             let required_asset_bucket = 
@@ -706,7 +909,8 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
-            
+            let pool_manager_proof = self.create_pool_manager_proof();
+            LocalAuthZone::push(pool_manager_proof);
             self.pool_component.protected_deposit(required_asset_bucket.into());
             
             let owed_pt_bucket = 
@@ -715,6 +919,7 @@ mod yield_amm {
                     desired_pt_amount, 
                     WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
                 );
+            LocalAuthZone::drop_proofs();
 
             // Saves the new implied rate of the trade.
             self.update_pool_stat(
@@ -771,8 +976,8 @@ mod yield_amm {
                     trading_fees,
                     total_fees,
                     effective_implied_rate,
-                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
+                    trade_implied_rate: trade_implied_rate.exp().unwrap_or(PreciseDecimal::ZERO),
+                    new_implied_rate: new_implied_rate.exp().unwrap_or(PreciseDecimal::ZERO),
                     output: owed_pt_bucket.amount(),
                     local_id: None,
                 }
@@ -831,7 +1036,8 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
-
+            let pool_manager_proof = self.create_pool_manager_proof();
+            LocalAuthZone::push(pool_manager_proof);
             let asset_to_flash_swap = 
                 self.pool_component.protected_withdraw(
                     asset_bucket.resource_address(), 
@@ -854,7 +1060,7 @@ mod yield_amm {
             let all_in_exchange_rate_asset_to_yt =
                 asset_amount
                 .checked_div(yt_amount_diff)
-                .unwrap();
+                .expect("[swap_exact_asset_for_yt] Overflow in all in exchange rate");
 
             // All in exchange rate in terms of PT
             let all_in_exchange_rate =
@@ -864,10 +1070,18 @@ mod yield_amm {
                     .checked_sub(all_in_exchange_rate_asset_to_yt)
                     .unwrap()
                 )
-                .unwrap();
+                .map(|x| 
+                    if x.is_negative() {
+                        dec!(1)
+                    } else {
+                        x
+                    }
+                )
+                .unwrap_or(Decimal::ONE);
 
             let pt_amount_to_pay_back = pt_bucket_to_pay_back.amount();
             self.pool_component.protected_deposit(pt_bucket_to_pay_back.into());
+            LocalAuthZone::drop_proofs();
 
             self.update_pool_stat(
                 trading_fees,
@@ -921,8 +1135,8 @@ mod yield_amm {
                     trading_fees,
                     total_fees,
                     effective_implied_rate,
-                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
+                    trade_implied_rate: trade_implied_rate.exp().unwrap_or(PreciseDecimal::ZERO),
+                    new_implied_rate: new_implied_rate.exp().unwrap_or(PreciseDecimal::ZERO),
                     output: yt_amount_diff,
                     local_id: Some(yt_to_return.non_fungible_local_id()),
                 }
@@ -1002,6 +1216,8 @@ mod yield_amm {
             // STATE CHANGES
             //-----------------------------------------------------------------------
 
+            let pool_manager_proof = self.create_pool_manager_proof();
+            LocalAuthZone::push(pool_manager_proof);
             let withdrawn_pt_bucket = 
                 self.pool_component.protected_withdraw(
                     self.market_info.pt_address, 
@@ -1021,18 +1237,21 @@ mod yield_amm {
                         amount_yt_to_swap_in
                     );
 
-            // let adjusted_asset_owed_for_pt_flash_swap =
-            //     asset_owed_for_pt_flash_swap
-            //     .min(redeemed_asset_bucket.amount());
+            // Potentially temporary to ensure the method break.
+            // Would imply that no asset is returned if redeemed_asset_bucket is minimum.
+            let adjusted_asset_owed_for_pt_flash_swap = 
+                asset_owed_for_pt_flash_swap
+                .min(redeemed_asset_bucket.amount());
         
             let asset_owed = 
                 redeemed_asset_bucket
                 .take(adjusted_asset_owed_for_pt_flash_swap);
 
+            // Temporary - not even sure if we should calculate effective implied rate
             let yt_exchange_rate =
                 redeemed_asset_bucket.amount()
                 .checked_div(amount_yt_to_swap_in)
-                .unwrap();
+                .expect("[swap_exact_yt_for_asset] Overflow in yt exchange rate");
 
             let all_in_exchange_rate =
                 Decimal::ONE
@@ -1041,14 +1260,24 @@ mod yield_amm {
                     .checked_sub(yt_exchange_rate)
                     .unwrap()
                 )
-                .unwrap();
+                .map(|x| 
+                    if x.is_negative() {
+                        dec!(1)
+                    } else {
+                        x
+                    }
+                )
+                .unwrap_or(Decimal::ONE);
 
             self.pool_component.protected_deposit(asset_owed.into());
+            
 
             // Any excess PT is paid back, pool always wins.
             if let Some(excess_pt_bucket) = optional_pt_bucket {
                 self.pool_component.protected_deposit(excess_pt_bucket);
             }
+
+            LocalAuthZone::drop_proofs();
 
             self.update_pool_stat(
                 trading_fees,
@@ -1111,8 +1340,8 @@ mod yield_amm {
                     trading_fees,
                     total_fees,
                     effective_implied_rate,
-                    trade_implied_rate: trade_implied_rate.exp().unwrap(),
-                    new_implied_rate: new_implied_rate.exp().unwrap(),
+                    trade_implied_rate: trade_implied_rate.exp().unwrap_or(PreciseDecimal::ONE),
+                    new_implied_rate: new_implied_rate.exp().unwrap_or(PreciseDecimal::ONE),
                     output: redeemed_asset_bucket.amount(),
                     local_id: local_id
                 }
@@ -1315,7 +1544,6 @@ mod yield_amm {
                 net_asset_fee_to_reserve,
                 trading_fees,
             )
-
         }
 
         fn handle_optional_yt_bucket(
@@ -1404,21 +1632,21 @@ mod yield_amm {
                     market_compute.rate_anchor,
                     market_compute.rate_scalar
                 )
-                .expect("InvalidExchangeRate");
+                .expect("[get_ln_implied_rate] InvalidExchangeRate");
 
             // exchangeRate >= 1 so its ln >= 0
             let ln_exchange_rate = 
                 // adjusted_exchange_rate
                 exchange_rate
                 .ln()
-                .unwrap();
+                .expect("[get_ln_implied_rate] Natural log of exchange rate should be positive");
 
             let ln_implied_rate = 
                 ln_exchange_rate.checked_mul(PERIOD_SIZE)
                 .and_then(|result| 
                     result.checked_div(time_to_expiry)
                 )
-                .unwrap();
+                .expect("[get_ln_implied_rate] Overflow in ln implied rate");
 
             ln_implied_rate
         }
@@ -1434,10 +1662,10 @@ mod yield_amm {
                 .pow(
                     PERIOD_SIZE
                     .checked_div(time_to_expiry)
-                    .unwrap()
+                    .expect("[all_in_exchange_rate_to_implied_rate] Overflow in implied rate calculation")
                 )
                 .and_then(|result| result.checked_sub(Decimal::ONE))
-                .unwrap()
+                .expect("[all_in_exchange_rate_to_implied_rate] Exchange rate is negative")
         }
 
         pub fn time_to_expiry(&self) -> i64 {
@@ -1453,7 +1681,7 @@ mod yield_amm {
                 &current_time_instant
             )
             .ok()
-            .unwrap()
+            .expect("[current_time] Failed to convert instant to UTC date time")
         }
 
         fn get_prism_splitter_component(&mut self) -> Global<PrismSplitterV2> {
@@ -1533,6 +1761,13 @@ mod yield_amm {
             prism_splitter: ComponentAddress
         ) {
             self.prism_splitter_component = prism_splitter;
+        }
+
+        pub fn change_pool_component(
+            &mut self,
+            pool_component: Global<TwoResourcePool>
+        ) {
+            self.pool_component = pool_component;
         }
     }
 }

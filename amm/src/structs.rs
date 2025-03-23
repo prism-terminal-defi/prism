@@ -64,3 +64,17 @@ pub struct PoolStat {
     pub reserve_fees_collected: PreciseDecimal,
     pub total_fees_collected: PreciseDecimal,
 }
+
+#[derive(ScryptoSbor, NonFungibleData, Debug, PartialEq, Eq)]
+pub struct YieldTokenData {
+    pub underlying_asset_address: ResourceAddress,
+    #[mutable]
+    pub last_claim_redemption_factor: Decimal,
+    #[mutable]
+    pub yt_amount: Decimal,
+    #[mutable]
+    pub yield_claimed: Decimal,
+    #[mutable]
+    pub accrued_yield: Decimal,
+    pub maturity_date: UtcDateTime,
+}

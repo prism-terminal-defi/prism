@@ -25,7 +25,6 @@ name = "amm"
 version = "0.1.0"
 dependencies = [
  "prism-calculations",
- "prism_splitter_v2",
  "radix-transactions 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "scrypto",
  "scrypto-test",
