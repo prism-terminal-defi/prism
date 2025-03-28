@@ -3,6 +3,9 @@ use scrypto_math::*;
 use crate::structs::*;
 use prism_calculations::liquidity_curve::*;
 use crate::events::*;
+use ports_interface::prelude::PrismSplitterAdapterInterfaceScryptoStub;
+
+type PrismSplitterAdapter = PrismSplitterAdapterInterfaceScryptoStub;
 
 /// 365 days in seconds
 const PERIOD_SIZE: Decimal = dec!(31536000);
@@ -12,40 +15,40 @@ const PERIOD_SIZE: Decimal = dec!(31536000);
 mod yield_amm {
     // The associated PrismSplitterV2 package and component which is used to verify associated PT, YT, and 
     // Asset asset. It is also used to perform YT <---> Asset swaps.
-    extern_blueprint! {
-        // "package_sim1p4rcnrz0sjnh0e9klyf7atedfmtgghkdn5fd5tefpyrtt7tcjwv7th",
-        // Stokenet
-        // "package_tdx_2_1p59fttwdx3s8hc5l7krjqaeslukvmsepq6cjyvmfkn8ugu5c02ghn4",
-        // Mainnet
-        "package_rdx1pkg6mcr85erca2q8tm5gpe2vws93xw3d8yldkq7zjt95dr7cmp6u27",
-        PrismSplitterV2 {
-            fn tokenize(
-                &mut self, 
-                amount: FungibleBucket,
-                optional_yt_bucket: Option<NonFungibleBucket>,
-            ) -> (FungibleBucket, NonFungibleBucket);
-            fn redeem(
-                &mut self, 
-                pt_bucket: FungibleBucket, 
-                yt_bucket: NonFungibleBucket,
-                yt_amount_to_redeem: Decimal,
-            ) -> 
-                (
-                    FungibleBucket, 
-                    Option<NonFungibleBucket>,
-                    Option<FungibleBucket>,
-                );
-            fn claim_yield(&mut self, yt_bucket: NonFungibleBucket) -> (FungibleBucket, Option<NonFungibleBucket>);
-            fn get_pt_redemption_value(&self, amount: Decimal) -> Decimal;
-            fn get_underlying_asset_redemption_value(&self, amount: Decimal) -> Decimal;
-            fn get_underlying_asset_redemption_factor(&self) -> Decimal;
-            fn pt_address(&self) -> ResourceAddress;
-            fn yt_address(&self) -> ResourceAddress;
-            fn underlying_asset(&self) -> ResourceAddress;
-            fn maturity_date(&self) -> UtcDateTime;
-            fn protocol_resources(&self) -> (ResourceAddress, ResourceAddress);
-        }
-    }
+    // extern_blueprint! {
+    //     // "package_sim1p4rcnrz0sjnh0e9klyf7atedfmtgghkdn5fd5tefpyrtt7tcjwv7th",
+    //     // Stokenet
+    //     // "package_tdx_2_1p59fttwdx3s8hc5l7krjqaeslukvmsepq6cjyvmfkn8ugu5c02ghn4",
+    //     // Mainnet
+    //     "package_rdx1p57d92ha262vlu09xanw9uvp5e370rnlnw5qe9d94ptke9lxgtfcz9",
+    //     PrismSplitterV2 {
+    //         fn tokenize(
+    //             &mut self, 
+    //             amount: FungibleBucket,
+    //             optional_yt_bucket: Option<NonFungibleBucket>,
+    //         ) -> (FungibleBucket, NonFungibleBucket);
+    //         fn redeem(
+    //             &mut self, 
+    //             pt_bucket: FungibleBucket, 
+    //             yt_bucket: NonFungibleBucket,
+    //             yt_amount_to_redeem: Decimal,
+    //         ) -> 
+    //             (
+    //                 FungibleBucket, 
+    //                 Option<NonFungibleBucket>,
+    //                 Option<FungibleBucket>,
+    //             );
+    //         fn claim_yield(&mut self, yt_bucket: NonFungibleBucket) -> (FungibleBucket, Option<NonFungibleBucket>);
+    //         fn get_pt_redemption_value(&self, amount: Decimal) -> Decimal;
+    //         fn get_underlying_asset_redemption_value(&self, amount: Decimal) -> Decimal;
+    //         fn get_underlying_asset_redemption_factor(&self) -> Decimal;
+    //         fn pt_address(&self) -> ResourceAddress;
+    //         fn yt_address(&self) -> ResourceAddress;
+    //         fn underlying_asset(&self) -> ResourceAddress;
+    //         fn maturity_date(&self) -> UtcDateTime;
+    //         fn protocol_resources(&self) -> (ResourceAddress, ResourceAddress);
+    //     }
+    // }
 
     const OWNER_BADGE_RM: ResourceManager = 
         resource_manager!("resource_rdx1tk4zl8p0wzh0g3f39adzv37xg7jmgm0th7q6ud78wv48nffzlsvrch");
@@ -73,7 +76,7 @@ mod yield_amm {
             compute_market => PUBLIC;
             time_to_expiry => PUBLIC;
             check_maturity => PUBLIC;
-            create_pool_manager_proof => restrict_to: [SELF, OWNER];
+            // create_pool_manager_proof => restrict_to: [SELF, OWNER];
             withdraw_pool_manager_badge => restrict_to: [OWNER];
             change_maturity_date => restrict_to: [OWNER];
             change_market_status => restrict_to: [OWNER];
@@ -86,8 +89,7 @@ mod yield_amm {
     pub struct YieldAMM {
         /// The native pool component which manages liquidity reserves. 
         pub pool_component: Global<TwoResourcePool>,
-        pub pool_manager_access_controller: Global<AccessController>,
-        pub prism_splitter_component: ComponentAddress,
+        pub prism_splitter_component: PrismSplitterAdapter,
         /// The initial scalar root of the market. This is used to calculate
         /// the scalar value. It determins the slope of the curve and becomes
         /// less sensitive as the market approaches maturity. The higher the 
@@ -114,9 +116,7 @@ mod yield_amm {
             scalar_root: Decimal,
             market_fee_input: MarketFeeInput,
             prism_splitter_address: ComponentAddress,
-            pool_manager_access_controller: Global<AccessController>,
             dapp_definition: ComponentAddress,
-            pool_manager_badge: FungibleBucket,
             address_reservation: Option<GlobalAddressReservation>,
         ) -> Global<YieldAMM> {
             assert!(scalar_root > Decimal::ZERO);
@@ -126,27 +126,27 @@ mod yield_amm {
                 && market_fee_input.reserve_fee_percent < Decimal::ONE
             );
 
-            let (address_reservation, component_address) = match address_reservation {
-                Some(address_reservation) => {
-                    let component_address = 
-                        ComponentAddress::try_from(
-                            Runtime::get_reservation_address(&address_reservation))
-                        .ok()
-                        .expect("[instantiate_yield_amm] Failed to convert address reservation to component address");
+            let (address_reservation, _) = 
+                match address_reservation {
+                    Some(address_reservation) => {
+                        let component_address = 
+                            ComponentAddress::try_from(
+                                Runtime::get_reservation_address(&address_reservation))
+                            .ok()
+                            .expect("[instantiate_yield_amm] Failed to convert address reservation to component address");
 
-                    (address_reservation, component_address)
-                },
-                None => Runtime::allocate_component_address(YieldAMM::blueprint_id()),
-            };
-
-            let global_component_caller_badge =
-                NonFungibleGlobalId::global_caller_badge(component_address);
+                        (address_reservation, component_address)
+                    },
+                    None => Runtime::allocate_component_address(YieldAMM::blueprint_id()),
+                };
         
-            let prism_splitter_component: Global<PrismSplitterV2> = 
+            // let prism_splitter_component: Global<PrismSplitterV2> = 
+            //     prism_splitter_address.into();
+            let prism_splitter_component: PrismSplitterAdapter = 
                 prism_splitter_address.into();
 
             let (market_name, market_symbol, market_icon) =
-                Self::retrieve_metadata(prism_splitter_component);
+                Self::retrieve_metadata(prism_splitter_address);
 
             let underlying_asset_address = 
                 prism_splitter_component.underlying_asset();
@@ -169,9 +169,13 @@ mod yield_amm {
                 "Market has expired!"
             );
 
+            let pool_manager_badge = ResourceBuilder::new_fungible(OwnerRole::None)
+                .divisibility(DIVISIBILITY_NONE)
+                .mint_initial_supply(Decimal::ONE);
+
             let combined_rule_node = 
                 owner_role_node
-                .or(CompositeRequirement::from(global_component_caller_badge))
+                .or(CompositeRequirement::from(pool_manager_badge.resource_address()))
                 .or(CompositeRequirement::from(Runtime::package_token()));
 
             let owner_role = 
@@ -253,8 +257,7 @@ mod yield_amm {
 
             Self {
                 pool_component,
-                prism_splitter_component: prism_splitter_component.address(),
-                pool_manager_access_controller,
+                prism_splitter_component: prism_splitter_component,
                 market_fee,
                 market_state,
                 market_info: market_info.clone(),
@@ -296,7 +299,6 @@ mod yield_amm {
                     royalty_claimer_updater => OWNER;
                 },
                 init {
-                    create_pool_manager_proof => Free, updatable;
                     withdraw_pool_manager_badge => Free, updatable;
                     set_initial_ln_implied_rate => Free, updatable;
                     get_market_implied_rate => Free, updatable;
@@ -329,7 +331,6 @@ mod yield_amm {
             scalar_root: Decimal,
             market_fee_input: MarketFeeInput,
             pool_component: Global<TwoResourcePool>,
-            pool_manager_access_controller: Global<AccessController>,
             prism_splitter_address: ComponentAddress,
             dapp_definition: ComponentAddress,
             pool_manager_badge: FungibleBucket,
@@ -358,11 +359,13 @@ mod yield_amm {
             let global_component_caller_badge =
                 NonFungibleGlobalId::global_caller_badge(component_address);
         
-            let prism_splitter_component: Global<PrismSplitterV2> = 
+            // let prism_splitter_component: Global<PrismSplitterV2> = 
+            //     prism_splitter_address.into();
+            let prism_splitter_component: PrismSplitterAdapter = 
                 prism_splitter_address.into();
 
             let (market_name, market_symbol, market_icon) =
-                Self::retrieve_metadata(prism_splitter_component);
+                Self::retrieve_metadata(prism_splitter_address);
 
             let underlying_asset_address = 
                 prism_splitter_component.underlying_asset();
@@ -452,8 +455,7 @@ mod yield_amm {
 
             Self {
                 pool_component,
-                prism_splitter_component: prism_splitter_component.address(),
-                pool_manager_access_controller,
+                prism_splitter_component: prism_splitter_component,
                 market_fee,
                 market_state,
                 market_info: market_info.clone(),
@@ -489,9 +491,13 @@ mod yield_amm {
         }
 
         pub fn retrieve_metadata(
-            prism_splitter_component: Global<PrismSplitterV2>,
+            // prism_splitter_component: Global<PrismSplitterV2>,
+            prism_splitter_component: ComponentAddress,
         ) -> (String, String, UncheckedUrl) {
-        
+            
+            let prism_splitter_component: Global<AnyComponent> = 
+                prism_splitter_component.into();
+
             let market_name: String =     
                 prism_splitter_component
                 .get_metadata("market_name")
@@ -511,18 +517,8 @@ mod yield_amm {
             (market_name, market_symbol, market_icon)
         }
 
-        pub fn create_pool_manager_proof(&mut self) -> Proof {
-            self.pool_manager_vault
-            .authorize_with_amount(
-                dec!(1), 
-                || {
-                    self.pool_manager_access_controller.create_proof()
-                }
-            )
-        }
-
         pub fn withdraw_pool_manager_badge(&mut self) -> FungibleBucket {
-            self.pool_manager_vault.take(dec!(1))
+            self.pool_manager_vault.take(Decimal::ONE)
         }
 
         // First set the natural log of the implied rate here.
@@ -621,17 +617,14 @@ mod yield_amm {
         ) {
             self.assert_market_not_expired();
 
-            let pool_manager_proof = self.create_pool_manager_proof();
-
-            LocalAuthZone::push(pool_manager_proof);
-
+            
             let (pool_unit, remainder) = 
-                self.pool_component
-                    .contribute(
-                        (pt_bucket.into(), asset_bucket.into())
-                    );
-                
-            LocalAuthZone::drop_proofs();
+                self.pool_manager_vault.authorize_with_amount(Decimal::ONE, || {
+                    self.pool_component
+                        .contribute(
+                            (pt_bucket.into(), asset_bucket.into())
+                        )
+                });
 
             // Initialize Market State if not already initialized
             if self.market_state.last_ln_implied_rate.is_zero() {
@@ -726,20 +719,14 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
-
-            let pool_manager_proof = self.create_pool_manager_proof();
-            LocalAuthZone::push(pool_manager_proof);
-            self.pool_component.protected_deposit(pt_bucket.into());
+            self.deposit_to_pool(pt_bucket.into());
             
 
             let owed_asset_bucket = 
-                self.pool_component.protected_withdraw(
+                self.withdraw_from_pool(
                     self.market_info.underlying_asset_address, 
                     asset_to_account, 
-                    WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
                 );
-
-            LocalAuthZone::drop_proofs();
 
             self.update_pool_stat(
                 trading_fees,
@@ -909,17 +896,13 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
-            let pool_manager_proof = self.create_pool_manager_proof();
-            LocalAuthZone::push(pool_manager_proof);
-            self.pool_component.protected_deposit(required_asset_bucket.into());
+            self.deposit_to_pool(required_asset_bucket.into());
             
             let owed_pt_bucket = 
-                self.pool_component.protected_withdraw(
+                self.withdraw_from_pool(
                     self.market_info.pt_address, 
                     desired_pt_amount, 
-                    WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
                 );
-            LocalAuthZone::drop_proofs();
 
             // Saves the new implied rate of the trade.
             self.update_pool_stat(
@@ -1036,13 +1019,11 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
-            let pool_manager_proof = self.create_pool_manager_proof();
-            LocalAuthZone::push(pool_manager_proof);
+            
             let asset_to_flash_swap = 
-                self.pool_component.protected_withdraw(
+                self.withdraw_from_pool(
                     asset_bucket.resource_address(), 
                     asset_to_borrow,
-                    WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
                 );
 
             // Combined asset
@@ -1080,8 +1061,8 @@ mod yield_amm {
                 .unwrap_or(Decimal::ONE);
 
             let pt_amount_to_pay_back = pt_bucket_to_pay_back.amount();
-            self.pool_component.protected_deposit(pt_bucket_to_pay_back.into());
-            LocalAuthZone::drop_proofs();
+
+            self.deposit_to_pool(pt_bucket_to_pay_back.into());
 
             self.update_pool_stat(
                 trading_fees,
@@ -1215,22 +1196,29 @@ mod yield_amm {
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
-
-            let pool_manager_proof = self.create_pool_manager_proof();
-            LocalAuthZone::push(pool_manager_proof);
             let withdrawn_pt_bucket = 
-                self.pool_component.protected_withdraw(
+                self.withdraw_from_pool(
                     self.market_info.pt_address, 
                     pt_to_withdraw, 
-                    WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
                 );
 
             // Combine PT and YT to redeem Asset
+            // let (
+            //     mut redeemed_asset_bucket, 
+            //     optional_yt_bucket,
+            //     optional_pt_bucket,
+            // ) = self.get_prism_splitter_component()
+            //         .redeem(
+            //             withdrawn_pt_bucket, 
+            //             yt_bucket, 
+            //             amount_yt_to_swap_in
+            //         );
+
             let (
                 mut redeemed_asset_bucket, 
                 optional_yt_bucket,
                 optional_pt_bucket,
-            ) = self.get_prism_splitter_component()
+            ) = self.prism_splitter_component
                     .redeem(
                         withdrawn_pt_bucket, 
                         yt_bucket, 
@@ -1269,15 +1257,12 @@ mod yield_amm {
                 )
                 .unwrap_or(Decimal::ONE);
 
-            self.pool_component.protected_deposit(asset_owed.into());
-            
+            self.deposit_to_pool(asset_owed.into());
 
             // Any excess PT is paid back, pool always wins.
             if let Some(excess_pt_bucket) = optional_pt_bucket {
-                self.pool_component.protected_deposit(excess_pt_bucket);
+                self.deposit_to_pool(excess_pt_bucket);
             }
-
-            LocalAuthZone::drop_proofs();
 
             self.update_pool_stat(
                 trading_fees,
@@ -1384,6 +1369,29 @@ mod yield_amm {
                 rate_scalar,
                 rate_anchor,
             }
+        }
+
+        fn deposit_to_pool(
+            &mut self,
+            bucket: FungibleBucket
+        ) {
+            self.pool_manager_vault.authorize_with_amount(Decimal::ONE,|| {
+                self.pool_component.protected_deposit(bucket);
+            });
+        }
+
+        fn withdraw_from_pool(
+            &mut self,
+            resource_to_withdraw: ResourceAddress,
+            amount: Decimal,
+        ) -> FungibleBucket {
+            self.pool_manager_vault.authorize_with_amount(Decimal::ONE,|| {
+                self.pool_component.protected_withdraw(
+                    resource_to_withdraw, 
+                    amount, 
+                    WithdrawStrategy::Rounded(RoundingMode::ToNearestMidpointToEven)
+                )
+            })
         }
 
         /// Calculates the the trade based on the direction of the trade.
@@ -1559,10 +1567,19 @@ mod yield_amm {
                     yt_bucket.non_fungible::<YieldTokenData>().data()
                 });
         
+            // let (
+            //     pt_to_pay_back, 
+            //     yt_to_return
+            // ) = self.get_prism_splitter_component()
+            //         .tokenize(
+            //             asset_bucket, 
+            //             optional_yt_bucket
+            //         );
+
             let (
                 pt_to_pay_back, 
                 yt_to_return
-            ) = self.get_prism_splitter_component()
+            ) = self.prism_splitter_component
                     .tokenize(
                         asset_bucket, 
                         optional_yt_bucket
@@ -1684,9 +1701,9 @@ mod yield_amm {
             .expect("[current_time] Failed to convert instant to UTC date time")
         }
 
-        fn get_prism_splitter_component(&mut self) -> Global<PrismSplitterV2> {
-            self.prism_splitter_component.into()
-        }
+        // fn get_prism_splitter_component(&mut self) -> Global<PrismSplitterV2> {
+        //     self.prism_splitter_component.into()
+        // }
 
         fn get_resource_divisibility(&self) -> u8 {
             ResourceManager::from(
@@ -1760,7 +1777,7 @@ mod yield_amm {
             &mut self,
             prism_splitter: ComponentAddress
         ) {
-            self.prism_splitter_component = prism_splitter;
+            self.prism_splitter_component = prism_splitter.into();
         }
 
         pub fn change_pool_component(
