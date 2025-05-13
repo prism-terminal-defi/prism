@@ -18,7 +18,7 @@
 mod blueprint_interface;
 pub use blueprint_interface::*;
 
-use ports_interface::pool::*;
+use ports_interface::prelude::*;
 use scrypto::prelude::*;
 use scrypto_interface::*;
 

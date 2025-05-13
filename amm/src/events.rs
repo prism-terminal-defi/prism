@@ -10,14 +10,12 @@ pub struct InstantiateAMMEvent {
 
 #[derive(ScryptoSbor, ScryptoEvent, Clone, Debug)]
 pub struct SwapEvent {
-    pub timestamp: UtcDateTime,
+    pub swap_type: String,
     pub resource_sold: ResourceAddress,
     pub sell_size: Decimal,
     pub resource_bought: ResourceAddress,
     pub buy_size: Decimal,
     pub trade_volume: Decimal,
-    pub side: String,
-    // price
     pub exchange_rate_before_fees: PreciseDecimal,
     pub exchange_rate_after_fees: Decimal,
     pub reserve_fees: PreciseDecimal,

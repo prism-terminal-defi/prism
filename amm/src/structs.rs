@@ -2,8 +2,6 @@ use scrypto::prelude::*;
 
 #[derive(ScryptoSbor, Clone, Debug)]
 pub struct MarketState {
-    pub total_pt: Decimal,
-    pub total_asset: Decimal,
     pub initial_rate_anchor: PreciseDecimal,
     pub scalar_root: Decimal,
     /// The natural log of the implied rate of the last trade.
@@ -44,6 +42,8 @@ pub struct MarketFeeInput {
 pub struct MarketCompute {
     pub rate_scalar: Decimal,
     pub rate_anchor: PreciseDecimal,
+    pub total_pt_amount: Decimal,
+    pub total_base_asset_amount: Decimal,
 }
 
 #[derive(ScryptoSbor, Clone, Debug)]

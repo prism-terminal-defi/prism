@@ -16,3 +16,4 @@
 // under the License.
 
 pub use crate::pool::*;
+pub use crate::prism_splitter::*;

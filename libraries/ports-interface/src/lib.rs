@@ -15,6 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub mod pool;
-
+mod pool;
+mod prism_splitter;
 pub mod prelude;
