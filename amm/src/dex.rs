@@ -1,34 +1,30 @@
 use scrypto::prelude::*;
 use scrypto_math::*;
 use crate::structs::*;
-use prism_calculations::liquidity_curve::*;
+use crate::liquidity_curve::*;
 use crate::events::*;
 use ports_interface::prelude::PrismSplitterAdapterInterfaceScryptoStub;
 
 type PrismSplitterAdapter = PrismSplitterAdapterInterfaceScryptoStub;
 
 /// 365 days in seconds
-const PERIOD_SIZE: Decimal = dec!(31536000);
-const MAX_MARKET_PROPORTION: Decimal = dec!(0.96);
+pub const PERIOD_SIZE: Decimal = dec!(31536000);
+pub const MAX_MARKET_PROPORTION: Decimal = dec!(0.96);
 
 #[blueprint]
 #[events(InstantiateAMMEvent, SwapEvent)]
 mod yield_amm {
-
-    // const OWNER_BADGE_RM: ResourceManager = 
-    //     resource_manager!("resource_rdx1tk4zl8p0wzh0g3f39adzv37xg7jmgm0th7q6ud78wv48nffzlsvrch");
+    const OWNER_BADGE_RM: ResourceManager = 
+        resource_manager!("resource_rdx1tk4zl8p0wzh0g3f39adzv37xg7jmgm0th7q6ud78wv48nffzlsvrch");
 
     enable_function_auth! {
-        // instantiate_yield_amm => rule!(require(OWNER_BADGE_RM.address()));
-        // instantiate_yield_amm_with_existing => rule!(require(OWNER_BADGE_RM.address()));
-        instantiate_yield_amm => rule!(allow_all);
-        instantiate_yield_amm_with_existing => rule!(allow_all);
+        instantiate_yield_amm => rule!(require(OWNER_BADGE_RM.address()));
+        instantiate_yield_amm_with_existing => rule!(require(OWNER_BADGE_RM.address()));
         retrieve_metadata => rule!(allow_all);
     }
 
     enable_method_auth! {
         methods {
-            set_initial_ln_implied_rate => restrict_to: [OWNER, SELF];
             get_market_implied_rate => PUBLIC;
             get_vault_reserves => PUBLIC;
             get_market_state => PUBLIC;
@@ -41,6 +37,7 @@ mod yield_amm {
             compute_market => PUBLIC;
             time_to_expiry => PUBLIC;
             check_maturity => PUBLIC;
+            set_initial_ln_implied_rate => restrict_to: [OWNER, SELF];
             withdraw_pool_manager_badge => restrict_to: [OWNER];
             change_maturity_date => restrict_to: [OWNER];
             change_market_status => restrict_to: [OWNER];
@@ -197,7 +194,7 @@ mod yield_amm {
                 pool_unit_address,
             };
 
-            let fee_rate = 
+            let ln_fee_rate = 
                 PreciseDecimal::from(
                     market_fee_input.fee_rate
                     .ln()
@@ -205,7 +202,7 @@ mod yield_amm {
                 );
 
             let market_fee = MarketFee {
-                fee_rate,
+                ln_fee_rate,
                 reserve_fee_percent: market_fee_input.reserve_fee_percent
             };
 
@@ -296,6 +293,7 @@ mod yield_amm {
             owner_role_node: CompositeRequirement,
             last_ln_implied_rate: PreciseDecimal,
             scalar_root: Decimal,
+            pool_stat: PoolStat,
             market_fee_input: MarketFeeInput,
             pool_component: Global<TwoResourcePool>,
             prism_splitter_address: ComponentAddress,
@@ -382,7 +380,6 @@ mod yield_amm {
                 last_ln_implied_rate: last_ln_implied_rate,
             };
 
-
             let market_info = MarketInfo {
                 maturity_date,
                 underlying_asset_address,
@@ -391,7 +388,7 @@ mod yield_amm {
                 pool_unit_address,
             };
 
-            let fee_rate = 
+            let ln_fee_rate = 
                 PreciseDecimal::from(
                     market_fee_input.fee_rate
                     .ln()
@@ -399,14 +396,8 @@ mod yield_amm {
                 );
             
             let market_fee = MarketFee {
-                fee_rate,
+                ln_fee_rate,
                 reserve_fee_percent: market_fee_input.reserve_fee_percent
-            };
-
-            let pool_stat = PoolStat {
-                trading_fees_collected: PreciseDecimal::ZERO,
-                reserve_fees_collected: PreciseDecimal::ZERO,
-                total_fees_collected: PreciseDecimal::ZERO,
             };
 
             Runtime::emit_event(
@@ -483,11 +474,6 @@ mod yield_amm {
             self.pool_manager_vault.take(Decimal::ONE)
         }
 
-        // First set the natural log of the implied rate here.
-        // We also set optional inital anchor rate as the there isn't an anchor rate 
-        // yet until we have the implied rate.
-        // The initial anchor rate is determined by a guess on the interest rate 
-        // which trading will be most capital efficient.
         pub fn set_initial_ln_implied_rate(
             &mut self, 
             initial_rate_anchor: PreciseDecimal,
@@ -563,8 +549,8 @@ mod yield_amm {
         /// 
         /// # Arguments
         ///
-        /// * `asset_buckets`: [`FungibleBucket`] - A fungible bucket of Asset token supply.
         /// * `pt_bucket`: [`FungibleBucket`] - A fungible bucket of principal token supply.
+        /// * `asset_buckets`: [`FungibleBucket`] - A fungible bucket of Asset token supply.
         ///
         /// # Returns
         /// 
@@ -658,10 +644,8 @@ mod yield_amm {
 
             let time_to_expiry = self.time_to_expiry();
 
-            // Calcs the rate scalar and rate anchor with the current market state
             let market_compute = self.compute_market(time_to_expiry);
 
-            // Calcs the the swap
             let (
                 asset_to_account,
                 pre_fee_exchange_rate,
@@ -761,13 +745,6 @@ mod yield_amm {
         ///
         /// * [`FungibleBucket`] - A bucket of PT.
         /// * [`FungibleBucket`] - A bucket of any remaining Asset tokens.
-        /// 
-        /// Notes:
-        /// I believe it needs to be calculated this way because formula for trades is easier 
-        /// based on PT being swapped in/ou but not for Assets.
-        /// 
-        /// Challengers have room for improvements to approximate required Asset better such that it equals
-        /// the Asset sent in. 
         pub fn swap_exact_asset_for_pt(
             &mut self, 
             mut asset_bucket: FungibleBucket, 
@@ -787,7 +764,6 @@ mod yield_amm {
             let market_compute = 
                 self.compute_market(time_to_expiry);
 
-            // Calcs the swap
             let (
                 required_asset_amount,
                 pre_fee_exchange_rate,
@@ -800,7 +776,6 @@ mod yield_amm {
                     &market_compute,
                 );
 
-            // Might need to be required_asset_amount / desired_pt_amount
             let all_in_exchange_rate =
                 desired_pt_amount
                 .checked_div(required_asset_amount)
@@ -821,7 +796,6 @@ mod yield_amm {
                     desired_pt_amount, 
                 );
 
-            // Saves the new implied rate of the trade.
             self.update_pool_stat(
                 trading_fees,
                 net_asset_fee_to_reserve,
@@ -838,6 +812,7 @@ mod yield_amm {
                 self.market_state.last_ln_implied_rate;
 
             self.market_state.last_ln_implied_rate = new_implied_rate;
+
             //-----------------------------------------------------------------------
             // STATE CHANGES
             //-----------------------------------------------------------------------
@@ -885,12 +860,13 @@ mod yield_amm {
         ///
         /// * `bucket`: [`FungibleBucket`] - A fungible bucket of Asset tokens to
         /// swap for YT.
+        /// * `guess_amount_to_swap_in`: [`Decimal`] - The amount of PT to swap in.
+        /// * `optional_yt_bucket`: [`Option<NonFungibleBucket>`] - An optional non fungible bucket of YT tokens to
+        /// swap for Asset. If not provided, YT will be minted.
         ///
         /// # Returns
         ///
         /// * [`FungibleBucket`] - A bucket of YT.
-        /// 
-        /// Note:
         pub fn swap_exact_asset_for_yt(
             &mut self, 
             mut asset_bucket: FungibleBucket,
@@ -933,7 +909,6 @@ mod yield_amm {
                     asset_to_borrow,
                 );
 
-            // Combined asset
             asset_bucket.put(asset_to_flash_swap);
 
             let (
@@ -1042,15 +1017,14 @@ mod yield_amm {
         ///
         /// # Arguments
         ///
-        /// * `yt_bucket`: [`FungibleBucket`] - A fungible bucket of Asset tokens to
-        /// swap for YT.
+        /// * `yt_bucket`: [`NonFungibleBucket`] - A non fungible bucket of YT tokens to
+        /// swap for Asset.
         /// * `amount_yt_to_swap_in`: [Decimal] - Amount of YT to swap in.
         ///
         /// # Returns
         ///
         /// * [`FungibleBucket`] - A bucket of Asset.
         /// * [`Option<NonFungibleBucket>`] - A bucket of YT if not all were used.
-        /// * [`Option<FungibleBucket>`] - A bucket of unused Asset.
         pub fn swap_exact_yt_for_asset(
             &mut self, 
             yt_bucket: NonFungibleBucket,
@@ -1113,7 +1087,6 @@ mod yield_amm {
                         amount_yt_to_swap_in
                     );
 
-            // Ensure the method doesn't break.
             // Would imply that no asset is returned if redeemed_asset_bucket is minimum.
             let adjusted_asset_owed_for_pt_flash_swap = 
                 asset_owed_for_pt_flash_swap
@@ -1269,8 +1242,6 @@ mod yield_amm {
         }
 
         /// Calculates the the trade based on the direction of the trade.
-        /// 
-        /// This method retrieves the exchange rate, 
         fn calc_trade(
             &mut self,
             net_pt_amount: Decimal,
@@ -1297,12 +1268,12 @@ mod yield_amm {
             if proportion > MAX_MARKET_PROPORTION {
                 let error_message = 
                     format!(
-                        "SWAP_ERROR: Swap larger than what is allowed by the market"
+                        "SWAP_ERROR: Swap larger than what is allowed by the market. Trade proportion: {:?}",
+                        proportion
                     );
                 Runtime::panic(error_message);
             }
             
-            // Calcs exchange rate based on size of the trade (change)
             let pre_fee_exchange_rate = 
                 match calc_exchange_rate(
                     proportion,
@@ -1320,8 +1291,6 @@ mod yield_amm {
                     }
                 };
             
-            // Retrieve amount returned by applying the exchange rate
-            // against asset swapped in (before fees are applied)
             let pre_fee_amount = 
                 PreciseDecimal::from(net_pt_amount)
                 .checked_div(pre_fee_exchange_rate)
@@ -1340,7 +1309,7 @@ mod yield_amm {
 
             let total_fees = 
                 match calc_fee(
-                    self.market_fee.fee_rate,
+                    self.market_fee.ln_fee_rate,
                     time_to_expiry,
                     net_pt_amount,
                     pre_fee_exchange_rate,
@@ -1357,12 +1326,6 @@ mod yield_amm {
                     }
                 };
 
-            // Fee allocated to the asset reserve
-            // Portion of fees kept in the pool as additional liquidity
-            // Helps maintain pool stability
-            // Provides incentive for liquidity providers
-            // Acts as a buffer against impermanent loss
-            // Grows the pool's reserves over time
             let net_asset_fee_to_reserve =
                 total_fees
                 .checked_mul(self.market_fee.reserve_fee_percent)
@@ -1375,12 +1338,6 @@ mod yield_amm {
                 )
                 .expect("OverflowError");
 
-            // Trading fee allocated to the reserve based on the direction
-            // of the trade.
-            // Main protocol revenue
-            // Compensates for market making risk
-            // Helps prevent market manipulation
-            // Creates a cost for frequent trading
             let trading_fees = 
                 total_fees
                 .checked_sub(net_asset_fee_to_reserve)
@@ -1458,7 +1415,6 @@ mod yield_amm {
             )
         }
 
-        /// Retrieves current market implied rate.
         fn update_ln_implied_rate(
             &mut self, 
             time_to_expiry: i64, 
@@ -1489,8 +1445,8 @@ mod yield_amm {
             time_to_expiry: i64,
             current_total_pt: Decimal,
             current_total_base_asset: Decimal,
-            rate_anchor: PreciseDecimal, // Explicitly provided
-            rate_scalar: Decimal,       // Explicitly provided
+            rate_anchor: PreciseDecimal,
+            rate_scalar: Decimal,
         ) -> PreciseDecimal {
             let proportion = 
                 calc_proportion(

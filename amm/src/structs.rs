@@ -17,13 +17,12 @@ pub struct MarketInfo {
     pub pt_address: ResourceAddress,
     pub yt_address: ResourceAddress,
     pub pool_unit_address: ResourceAddress,
-
 }
 
 #[derive(ScryptoSbor, Clone, Debug)]
 pub struct MarketFee {
     // The trading fee charged on each trade.
-    pub fee_rate: PreciseDecimal,
+    pub ln_fee_rate: PreciseDecimal,
     // The reserve fee rate.
     pub reserve_fee_percent: Decimal,
 }
@@ -35,7 +34,6 @@ pub struct MarketFeeInput {
     // The reserve fee rate.
     pub reserve_fee_percent: Decimal,
 }
-
 /// Retrieves before-trade calculations for the 
 /// exchange rate.
 #[derive(ScryptoSbor, Clone, Debug)]

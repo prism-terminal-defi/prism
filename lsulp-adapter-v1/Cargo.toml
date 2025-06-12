@@ -1,7 +1,7 @@
 [package]
 name = "lsulp-adapter-v1"
-version.workspace = true
-edition.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
 description = "Defines the adapter for LSULP"
 
 [dependencies]
@@ -14,7 +14,6 @@ radix-common = { workspace = true }
 scrypto_math = { workspace = true }
 scrypto-interface = { path = "../libraries/scrypto-interface" }
 ports-interface = { path = "../libraries/ports-interface" }
-
 
 [features]
 default = []

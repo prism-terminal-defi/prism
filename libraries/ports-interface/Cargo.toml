@@ -1,7 +1,7 @@
 [package]
 name = "ports-interface"
-version.workspace = true
-edition.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
 description = "Defines the interface of the various adapters."
 
 [dependencies]
