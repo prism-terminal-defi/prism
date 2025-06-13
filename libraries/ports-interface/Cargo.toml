@@ -11,7 +11,6 @@ radix-transactions = { workspace = true, optional = true }
 radix-common = { workspace = true }
 radix-sbor-derive = { workspace = true }
 radix-engine-interface = { workspace = true }
-# radix-engine-derive = { workspace = true }
 
 scrypto-interface = { path = "../scrypto-interface" }
 

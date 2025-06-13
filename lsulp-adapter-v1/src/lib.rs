@@ -83,7 +83,10 @@ pub mod adapter {
             .globalize()
         }
 
-        pub fn change_pool_address(&mut self, new_pool_address: ComponentAddress) {
+        pub fn change_pool_address(
+            &mut self, 
+            new_pool_address: ComponentAddress
+        ) {
             self.pool_address = new_pool_address;
         }
 

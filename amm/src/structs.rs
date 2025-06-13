@@ -4,14 +4,11 @@ use scrypto::prelude::*;
 pub struct MarketState {
     pub initial_rate_anchor: PreciseDecimal,
     pub scalar_root: Decimal,
-    /// The natural log of the implied rate of the last trade.
     pub last_ln_implied_rate: PreciseDecimal,
 }
 
 #[derive(ScryptoSbor, Clone, Debug)]
 pub struct MarketInfo {
-    /// The expiration date of the market. Once the market has expired,
-    /// no more trades can be made.
     pub maturity_date: UtcDateTime,
     pub underlying_asset_address: ResourceAddress,
     pub pt_address: ResourceAddress,
@@ -21,21 +18,16 @@ pub struct MarketInfo {
 
 #[derive(ScryptoSbor, Clone, Debug)]
 pub struct MarketFee {
-    // The trading fee charged on each trade.
     pub ln_fee_rate: PreciseDecimal,
-    // The reserve fee rate.
     pub reserve_fee_percent: Decimal,
 }
 
 #[derive(ScryptoSbor, Clone, Debug)]
 pub struct MarketFeeInput {
-    // The trading fee charged on each trade.
     pub fee_rate: Decimal,
-    // The reserve fee rate.
     pub reserve_fee_percent: Decimal,
 }
-/// Retrieves before-trade calculations for the 
-/// exchange rate.
+
 #[derive(ScryptoSbor, Clone, Debug)]
 pub struct MarketCompute {
     pub rate_scalar: Decimal,
