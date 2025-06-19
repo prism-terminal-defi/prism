@@ -1106,13 +1106,8 @@ mod prism_splitter {
             &mut self,
             new_adapter: ComponentAddress,
         ) {
-            assert_eq!(
-                self.underlying_asset_pool, 
-                AssetPool::CustomPool(self.underlying_asset_pool.pool_address().into()),
-                "Not a pool adapter"
-            );
-
-            self.underlying_asset_pool = AssetPool::CustomPool(new_adapter.into());
+            self.underlying_asset_pool = 
+                AssetPool::CustomPool(new_adapter.into());
         }
 
         pub fn change_maturity_date(
