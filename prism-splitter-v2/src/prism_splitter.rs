@@ -50,6 +50,9 @@ mod prism_splitter {
     }
 
     enable_method_auth! {
+        roles {
+            depositor => updatable_by: [SELF, OWNER];
+        },
         methods {
             // Public methods
             tokenize => PUBLIC;
@@ -80,7 +83,7 @@ mod prism_splitter {
             migrate_funds_to_new_prism_splitter => restrict_to: [OWNER];
             set_prism_splitter_is_active => restrict_to: [OWNER];
             update_redemption_factor => restrict_to: [SELF, OWNER];
-            deposit_to_asset_vault => restrict_to: [SELF, OWNER];
+            deposit_to_asset_vault => restrict_to: [SELF, OWNER, depositor];
             update_protocol_resource_roles => restrict_to: [OWNER];
             update_protocol_rm => restrict_to: [OWNER];
             change_late_fee => restrict_to: [OWNER];
@@ -293,7 +296,7 @@ mod prism_splitter {
                 prism_splitter_is_active: true,
             }
             .instantiate()
-            .prepare_to_globalize(owner_role)
+            .prepare_to_globalize(owner_role.clone())
             .with_address(address_reservation)
             .metadata(Self::set_up_metadata_config(
                 market_name, 
@@ -305,6 +308,11 @@ mod prism_splitter {
                 maturity_date, 
                 dapp_definition
             ))
+            .roles(roles! {
+                depositor => AccessRule::from(
+                    owner_role_node.clone()
+                );
+            })
             .enable_component_royalties(
                 Self::set_up_component_royalties()
             )
@@ -320,6 +328,7 @@ mod prism_splitter {
             late_fee: Decimal,
             pool_type: PoolType,
             dapp_definition: ComponentAddress,
+            old_prism_splitter_address: ComponentAddress,
             address_reservation: Option<GlobalAddressReservation>,
         ) -> Global<PrismSplitterV2> {
 
@@ -352,7 +361,7 @@ mod prism_splitter {
             let (market_name, market_symbol, market_icon) = 
                 retrieve_metadata(underlying_asset_rm.into());
 
-            let owner_role = OwnerRole::Updatable(owner_role_rule);
+            let owner_role = OwnerRole::Updatable(owner_role_rule.clone());
 
             let underlying_asset_pool = match pool_type {
                 PoolType::Validator => {
@@ -422,6 +431,9 @@ mod prism_splitter {
                 maturity_date, 
                 dapp_definition
             ))
+            .roles(roles! {
+                depositor => rule!(require(global_caller(old_prism_splitter_address)));
+            })
             .enable_component_royalties(
                 Self::set_up_component_royalties()
             )
@@ -1187,7 +1199,7 @@ mod prism_splitter {
             let access_rule = 
                 rule!(require(global_caller(new_prism_splitter_address)));
 
-            self.update_protocol_resource_roles(access_rule);
+            self.update_protocol_resource_roles(access_rule.clone());
 
             let transaction_hash = Runtime::transaction_hash();
 

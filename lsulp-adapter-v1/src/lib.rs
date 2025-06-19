@@ -167,7 +167,7 @@ pub mod adapter {
         }
 
         fn get_redemption_factor(&self) -> Decimal {
-            let mut caviar_pool = pool!(self.pool_address);
+            let caviar_pool = pool!(self.pool_address);
             caviar_pool.get_dex_valuation_xrd()
             .checked_div(caviar_pool.get_liquidity_token_total_supply())
             .expect("[CaviarLsuPoolAdapter] Redemption factor calculation failed")
