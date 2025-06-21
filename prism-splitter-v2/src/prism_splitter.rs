@@ -87,6 +87,7 @@ mod prism_splitter {
             update_protocol_resource_roles => restrict_to: [OWNER];
             update_protocol_rm => restrict_to: [OWNER];
             change_late_fee => restrict_to: [OWNER];
+            withdraw_from_fee_vault => restrict_to: [OWNER];
         }
     }
     struct PrismSplitterV2  {
@@ -481,6 +482,7 @@ mod prism_splitter {
                             update_protocol_resource_roles => Free, updatable;
                             update_protocol_rm => Free, updatable;
                             change_late_fee => Free, updatable;
+                            withdraw_from_fee_vault => Free, updatable;
                         } 
                     );
             return royalties
@@ -1291,6 +1293,10 @@ mod prism_splitter {
             late_fee: Decimal,
         ) {
             self.late_fee = late_fee;
+        }
+
+        pub fn withdraw_from_fee_vault(&mut self) -> FungibleBucket {
+            self.fee_vault.take_all()
         }
     }
 
