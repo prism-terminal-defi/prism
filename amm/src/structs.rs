@@ -14,14 +14,14 @@
 
 use scrypto::prelude::*;
 
-#[derive(ScryptoSbor, Clone, Debug)]
+#[derive(ScryptoSbor, Copy, Clone, Debug)]
 pub struct MarketState {
     pub initial_rate_anchor: PreciseDecimal,
     pub scalar_root: Decimal,
     pub last_ln_implied_rate: PreciseDecimal,
 }
 
-#[derive(ScryptoSbor, Clone, Debug)]
+#[derive(ScryptoSbor, Copy, Clone, Debug)]
 pub struct MarketInfo {
     pub maturity_date: UtcDateTime,
     pub underlying_asset_address: ResourceAddress,
@@ -46,6 +46,7 @@ pub struct MarketFeeInput {
 pub struct MarketCompute {
     pub rate_scalar: Decimal,
     pub rate_anchor: PreciseDecimal,
+    pub redemption_factor: Decimal,
     pub total_pt_amount: Decimal,
     pub total_base_asset_amount: Decimal,
 }
@@ -62,7 +63,7 @@ pub struct ResourceInformation {
     pub divisibility: i64,
 }
 
-#[derive(ScryptoSbor, Clone, Debug)]
+#[derive(ScryptoSbor, Copy, Clone, Debug)]
 pub struct PoolStat {
     pub trading_fees_collected: PreciseDecimal,
     pub reserve_fees_collected: PreciseDecimal,

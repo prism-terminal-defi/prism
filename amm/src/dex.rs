@@ -42,15 +42,15 @@ mod yield_amm {
             get_market_implied_rate => PUBLIC;
             get_vault_reserves => PUBLIC;
             get_market_state => PUBLIC;
+            get_pool_stat => PUBLIC;
             add_liquidity => PUBLIC;
             remove_liquidity => PUBLIC;
             swap_exact_pt_for_asset => PUBLIC;
             swap_exact_asset_for_pt => PUBLIC;
             swap_exact_asset_for_yt => PUBLIC;
             swap_exact_yt_for_asset => PUBLIC;
-            compute_market => PUBLIC;
             time_to_expiry => PUBLIC;
-            check_maturity => PUBLIC;
+            is_market_expired => PUBLIC;
             set_initial_ln_implied_rate => restrict_to: [OWNER, SELF];
             withdraw_pool_manager_badge => restrict_to: [OWNER];
             change_maturity_date => restrict_to: [OWNER];
@@ -149,6 +149,7 @@ mod yield_amm {
                         "name" => "Pool Manager Badge", locked;
                         "symbol" => "PM", locked;
                         "icon_url" => UncheckedUrl::of("https://www.prismterminal.com/assets/glowlogo.svg"), locked;
+                        "dapp_definition" => dapp_definition, locked;
                     }
                 })
                 .mint_initial_supply(Decimal::ONE);
@@ -282,15 +283,15 @@ mod yield_amm {
                     get_market_implied_rate => Free, updatable;
                     get_vault_reserves => Free, updatable;
                     get_market_state => Free, updatable;
+                    get_pool_stat => Free, updatable;
                     add_liquidity => Free, updatable;
                     remove_liquidity => Free, updatable;
                     swap_exact_pt_for_asset => Free, updatable;
                     swap_exact_asset_for_pt => Free, updatable;
                     swap_exact_asset_for_yt => Free, updatable;
                     swap_exact_yt_for_asset => Free, updatable;
-                    compute_market => Free, updatable;
                     time_to_expiry => Free, updatable;
-                    check_maturity => Free, updatable;
+                    is_market_expired => Free, updatable;
                     change_maturity_date => Free, updatable;
                     change_market_status => Free, updatable;
                     force_change_last_implied_rate => Free, updatable;
@@ -549,14 +550,12 @@ mod yield_amm {
             }
         }
 
-        pub fn get_market_state(&mut self) -> MarketState {
-            let market_state = MarketState {
-                initial_rate_anchor: self.market_state.initial_rate_anchor,
-                scalar_root: self.market_state.scalar_root,
-                last_ln_implied_rate: self.market_state.last_ln_implied_rate,
-            };
+        pub fn get_market_state(&self) -> MarketState {
+            self.market_state
+        }
 
-            return market_state 
+        pub fn get_pool_stat(&self) -> PoolStat {
+            self.pool_stat
         }
 
         /// Adds liquidity to pool reserves.
@@ -1205,19 +1204,23 @@ mod yield_amm {
             (redeemed_asset_bucket, optional_yt_bucket)
         }
 
-        pub fn compute_market(
-            &self,
+        fn compute_market(
+            &mut self,
             time_to_expiry: i64
         ) -> MarketCompute {
 
             let pool_vault_reserves = self.get_vault_reserves();
+            
+            let redemption_factor = 
+                self.prism_splitter_component
+                .get_underlying_asset_redemption_factor();
 
             let total_base_asset_amount = 
-                self.prism_splitter_component
-                .get_underlying_asset_redemption_value(
-                    pool_vault_reserves.total_underlying_asset_amount
+                self.get_underlying_asset_redemption_value(
+                    pool_vault_reserves.total_underlying_asset_amount,
+                    redemption_factor
                 );
-
+        
             let proportion = calc_proportion(
                 Decimal::ZERO,
                 pool_vault_reserves.total_pt_amount,
@@ -1250,6 +1253,7 @@ mod yield_amm {
             MarketCompute {
                 rate_scalar,
                 rate_anchor,
+                redemption_factor,
                 total_pt_amount: pool_vault_reserves.total_pt_amount,
                 total_base_asset_amount,
             }
@@ -1257,7 +1261,7 @@ mod yield_amm {
 
         /// Calculates the the trade based on the direction of the trade.
         fn calc_trade(
-            &mut self,
+            &self,
             net_pt_amount: Decimal,
             time_to_expiry: i64,
             market_compute: &MarketCompute,
@@ -1408,17 +1412,13 @@ mod yield_amm {
                 )
                 .expect("OverflowError")
             };
-
-            let net_amount =                 
-                Decimal::try_from(net_amount)
-                .ok()
-                .unwrap();
-
-            let net_amount =
-                self.prism_splitter_component
-                    .calc_asset_owed_amount(
-                        net_amount
-                    );
+            
+            let net_amount = 
+                self.calc_asset_owed_amount(
+                    net_amount,
+                    market_compute.redemption_factor,
+                    resource_divisibility
+                );
 
             (
                 net_amount,
@@ -1427,6 +1427,53 @@ mod yield_amm {
                 net_asset_fee_to_reserve,
                 trading_fees,
             )
+        }
+
+        fn get_underlying_asset_redemption_value(
+            &self,
+            amount: Decimal,
+            redemption_factor: Decimal,
+        ) -> Decimal {
+
+            let resource_divisibility = 
+                self.get_resource_divisibility();
+
+            PreciseDecimal::from(amount)
+            .checked_mul(PreciseDecimal::from(redemption_factor))
+            .and_then(
+                |amount|
+                amount.checked_round(
+                    resource_divisibility, 
+                    RoundingMode::ToNearestMidpointToEven
+                )
+            )
+            .and_then(
+                |amount|
+                Decimal::try_from(amount).ok()
+            )
+            .expect("OverflowError")
+        }
+
+        fn calc_asset_owed_amount(
+            &self,
+            amount: PreciseDecimal,
+            redemption_factor: Decimal,
+            resource_divisibility: u8,
+        ) -> Decimal {
+            amount
+            .checked_div(PreciseDecimal::from(redemption_factor))
+            .and_then(
+                |amount|
+                amount.checked_round(
+                    resource_divisibility, 
+                    RoundingMode::ToNearestMidpointToEven
+                )
+            )
+            .and_then(
+                |amount|
+                Decimal::try_from(amount).ok()
+            )
+            .expect("OverflowError")
         }
 
         fn update_ln_implied_rate(
@@ -1614,7 +1661,7 @@ mod yield_amm {
         }
 
         /// Checks whether maturity has lapsed
-        pub fn check_maturity(&self) -> bool {
+        pub fn is_market_expired(&self) -> bool {
             Clock::current_time_comparison(
                 self.market_info.maturity_date.to_instant(), 
                 TimePrecision::Second, 
@@ -1624,7 +1671,7 @@ mod yield_amm {
 
         fn assert_market_not_expired(&self) {
             assert_ne!(
-                self.check_maturity(), 
+                self.is_market_expired(), 
                 true, 
                 "Market has reached its maturity"
             )

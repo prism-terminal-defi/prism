@@ -153,3 +153,4 @@ pub fn get_stake_unit_address(validator: Global<Validator>) -> ResourceAddress {
 
     ResourceAddress::try_from(global_address).ok().unwrap()
 }
+

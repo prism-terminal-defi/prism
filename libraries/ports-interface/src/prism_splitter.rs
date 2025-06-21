@@ -42,7 +42,7 @@ define_interface! {
             yt_bucket: NonFungibleBucket,
         ) -> (FungibleBucket, Option<NonFungibleBucket>);
         fn get_underlying_asset_redemption_value(&self, amount: Decimal) -> Decimal;
-        fn get_underlying_asset_redemption_factor(&self) -> Decimal;
+        fn get_underlying_asset_redemption_factor(&mut self) -> Decimal;
         fn calc_asset_owed_amount(&self, amount: Decimal) -> Decimal;
         fn pt_address(&self) -> ResourceAddress;
         fn yt_address(&self) -> ResourceAddress;

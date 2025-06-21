@@ -388,9 +388,7 @@ mod prism_splitter {
             };
 
             let redemption_factor = 
-                underlying_asset_pool.total_stake_amount()
-                .checked_div(underlying_asset_pool.total_stake_unit_supply())
-                .expect("Overflow");
+                underlying_asset_pool.get_underlying_asset_redemption_factor();
 
             let current_time = 
                 UtcDateTime::from_instant(
@@ -617,8 +615,7 @@ mod prism_splitter {
         fn handle_optional_yt_bucket(
             &mut self,
             optional_yt_bucket: Option<NonFungibleBucket>,
-            asset_amount: Decimal,
-            redemption_value_of_underlying_asset: Decimal,
+            redemption_value_of_underlying_asset_to_tokenize: Decimal,
         ) -> (UpdateOrMint, NonFungibleBucket) {
             match optional_yt_bucket {
                 Some(yt_bucket) => {
@@ -629,13 +626,9 @@ mod prism_splitter {
                     let local_id = yt_bucket.non_fungible_local_id();
                     let mut yt_data: YieldTokenData = self.yt_rm.get_non_fungible_data(&local_id);
 
-                    let redemption_value_of_asset_to_tokenize = 
-                        self.underlying_asset_pool
-                        .get_redemption_value(asset_amount);
-
                     let new_redemption_value_at_start = 
                         yt_data.yt_amount
-                        .checked_add(redemption_value_of_asset_to_tokenize)
+                        .checked_add(redemption_value_of_underlying_asset_to_tokenize)
                         .unwrap();
 
                     let new_last_claim_redemption_factor = self.redemption_factor;
@@ -664,17 +657,13 @@ mod prism_splitter {
                         .mint_ruid_non_fungible(
                             YieldTokenData {
                                 underlying_asset_address: self.asset_vault.resource_address(),
-                                last_claim_redemption_factor: self.underlying_asset_pool.get_underlying_asset_redemption_factor(),
-                                yt_amount: redemption_value_of_underlying_asset,
+                                last_claim_redemption_factor: self.redemption_factor,
+                                yt_amount: redemption_value_of_underlying_asset_to_tokenize,
                                 yield_claimed: Decimal::ZERO,
                                 accrued_yield: Decimal::ZERO,
                                 maturity_date: self.maturity_date
                             }
                         );
-
-                    self.redemption_factor = 
-                        self.underlying_asset_pool
-                        .get_underlying_asset_redemption_factor();
 
                     (UpdateOrMint::Mint(
                         yt_bucket.non_fungible_local_id(), 
@@ -710,7 +699,7 @@ mod prism_splitter {
             self.update_redemption_factor();
 
             let asset_owed_amount = 
-                self.underlying_asset_pool.calc_asset_owed_amount(pt_bucket.amount());
+                self.calc_asset_owed_amount(pt_bucket.amount());
    
             let mut asset_owed_bucket = 
                 self.withdraw_from_asset_vault(asset_owed_amount);
@@ -1001,7 +990,22 @@ mod prism_splitter {
             let yield_owed_in_xrd = 
                 self.calc_yield_owed_pub(non_fungible_local_id);
             
-            self.underlying_asset_pool.calc_asset_owed_amount(yield_owed_in_xrd)
+            self.calc_asset_owed_amount(yield_owed_in_xrd)
+        }
+
+        fn is_last_redemption_factor_updated_stale(&self) -> bool {
+            let last_updated_time = 
+                self.last_redemption_factor_updated.to_instant();
+
+            let last_updated_time_plus_1_minute =
+                last_updated_time.add_minutes(1)
+                .unwrap();
+
+            Clock::current_time_comparison(
+                last_updated_time_plus_1_minute, 
+                TimePrecision::Second, 
+                TimeComparisonOperator::Gte
+            )
         }
 
         pub fn update_redemption_factor(&mut self) {
@@ -1017,6 +1021,7 @@ mod prism_splitter {
                     self.redemption_factor = 
                         self.underlying_asset_pool
                         .get_underlying_asset_redemption_factor();
+
                     self.locked_redemption_factor = true;
                     self.last_redemption_factor_updated = current_time;
                 }
@@ -1025,12 +1030,12 @@ mod prism_splitter {
             }
     
             // Otherwise (before maturity) update as usual.
-            if current_time > self.last_redemption_factor_updated && 
-                self.asset_vault.amount().is_positive() 
+            if self.is_last_redemption_factor_updated_stale() 
             {
                 self.redemption_factor = 
                     self.underlying_asset_pool
                     .get_underlying_asset_redemption_factor();
+
                 self.last_redemption_factor_updated = current_time;
             }
         }
@@ -1080,10 +1085,10 @@ mod prism_splitter {
         }
 
         pub fn get_pt_redemption_value(
-            &self,
+            &mut self,
             pt_amount: Decimal
         ) -> Decimal {
-            self.underlying_asset_pool.calc_asset_owed_amount(pt_amount)
+            self.calc_asset_owed_amount(pt_amount)
         }
 
         /// Checks whether maturity date has been reached.
@@ -1329,8 +1334,7 @@ mod prism_splitter {
             let asset_amount = asset_bucket.amount();
 
             let redemption_value_of_underlying_asset = 
-                self.underlying_asset_pool
-                    .get_redemption_value(asset_amount);
+                self.get_underlying_asset_redemption_value(asset_amount);
 
             let pt_bucket = 
                 self.pt_rm
@@ -1341,7 +1345,6 @@ mod prism_splitter {
             let (yt_update_or_mint, yt_bucket) = 
                 self.handle_optional_yt_bucket(
                     optional_yt_bucket, 
-                    asset_amount, 
                     redemption_value_of_underlying_asset
                 );
 
@@ -1448,8 +1451,7 @@ mod prism_splitter {
             };
 
             let asset_owed_amount = 
-                self.underlying_asset_pool
-                .calc_asset_owed_amount(total_redemption_value_with_yield);
+                self.calc_asset_owed_amount(total_redemption_value_with_yield);
 
             let mut asset_owed_bucket =
                 self.withdraw_from_asset_vault(asset_owed_amount);
@@ -1571,7 +1573,7 @@ mod prism_splitter {
                 self.calc_total_yield_owed(&yt_data, yt_data.yt_amount);
 
             let required_underlying_asset_for_yield_owed =
-                self.underlying_asset_pool.calc_asset_owed_amount(yield_owed);
+                self.calc_asset_owed_amount(yield_owed);
 
             let mut asset_owed_bucket = 
                 self.withdraw_from_asset_vault(required_underlying_asset_for_yield_owed);
@@ -1639,20 +1641,65 @@ mod prism_splitter {
             &self,
             amount: Decimal,
         ) -> Decimal {
-            self.underlying_asset_pool.get_redemption_value(amount)
-        }
-
-        fn get_underlying_asset_redemption_factor(
-            &self
-        ) -> Decimal {
-            self.underlying_asset_pool.get_underlying_asset_redemption_factor()
+            match self.underlying_asset_pool {
+                AssetPool::Validator(ref validator) => validator.get_redemption_value(amount),
+                AssetPool::LiquidityPool(ref pool) => pool.get_redemption_value(amount),
+                AssetPool::CustomPool(_) => {
+                    let resource_divisibility = self.underlying_asset_divisibility();
+                    
+                    PreciseDecimal::from(self.redemption_factor)
+                    .checked_mul(PreciseDecimal::from(amount))
+                    .and_then(
+                        |amount|
+                        amount.checked_round(
+                            resource_divisibility, 
+                            RoundingMode::ToNearestMidpointToEven
+                        )
+                    )
+                    .and_then(
+                        |amount|
+                        Decimal::try_from(amount).ok()
+                    )
+                    .expect("[PrismSplitter] Overflow Error")
+                }
+            }
         }
 
         fn calc_asset_owed_amount(
             &self,
             amount: Decimal,
         ) -> Decimal {
-            self.underlying_asset_pool.calc_asset_owed_amount(amount)
+            match &self.underlying_asset_pool {
+                AssetPool::Validator(validator) => validator.calc_asset_owed_amount(amount),
+                AssetPool::LiquidityPool(pool) => pool.calc_asset_owed_amount(amount),
+                AssetPool::CustomPool(_) => {
+                    let resource_divisibility = 
+                        self.underlying_asset_divisibility();
+
+                    PreciseDecimal::from(amount)
+                    .checked_div(PreciseDecimal::from(self.redemption_factor))
+                    .and_then(
+                        |amount|
+                        amount
+                        .checked_round(
+                            resource_divisibility,
+                            RoundingMode::ToNearestMidpointToEven
+                        )
+                    )
+                    .and_then(
+                        |x|
+                        Decimal::try_from(x).ok()
+                    )
+                    .expect("[PrismSplitter] Overflow Error")
+                },
+            }
+        }
+
+        fn get_underlying_asset_redemption_factor(
+            &mut self
+        ) -> Decimal {
+            self.update_redemption_factor();
+            self.redemption_factor
         }
 
         fn pt_address(&self) -> ResourceAddress {
@@ -1692,59 +1739,11 @@ pub enum AssetPool {
 }
 
 impl AssetPool {
-    pub fn get_redemption_value(&self, amount: Decimal) -> Decimal {
-        match self {
-            AssetPool::Validator(validator) => validator.get_redemption_value(amount),
-            AssetPool::LiquidityPool(pool) => pool.get_redemption_value(amount),
-            AssetPool::CustomPool(pool) => pool.get_redemption_value(amount),
-        }
-    }
-
-    pub fn calc_asset_owed_amount(&self, amount: Decimal) -> Decimal {
-        match self {
-            AssetPool::Validator(validator) => validator.calc_asset_owed_amount(amount),
-            AssetPool::LiquidityPool(pool) => pool.calc_asset_owed_amount(amount),
-            AssetPool::CustomPool(pool) => pool.calc_asset_owed_amount(amount),
-        }
-    }
-
     pub fn get_underlying_asset_redemption_factor(&self) -> Decimal {
         match self {
             AssetPool::Validator(validator) => validator.get_redemption_factor(),
             AssetPool::LiquidityPool(pool) => pool.get_redemption_factor(),
             AssetPool::CustomPool(pool) => pool.get_redemption_factor(),
-        }
-    }
-
-    pub fn total_stake_amount(&self) -> Decimal {
-        match self {
-            AssetPool::Validator(validator) => validator.total_stake_amount(),
-            AssetPool::LiquidityPool(pool) => pool.total_stake_amount(),
-            AssetPool::CustomPool(pool) => pool.total_stake_amount(),
-        }
-    }
-
-    pub fn total_stake_unit_supply(&self) -> Decimal {
-        match self {
-            AssetPool::Validator(validator) => validator.total_stake_unit_supply(),
-            AssetPool::LiquidityPool(pool) => pool.total_stake_unit_supply(),
-            AssetPool::CustomPool(pool) => pool.total_stake_unit_supply(),
-        }
-    }
-
-    pub fn stake_unit_resource_address(&self) -> ResourceAddress {
-        match self {
-            AssetPool::Validator(validator) => validator.stake_unit_resource_address(),
-            AssetPool::LiquidityPool(pool) => pool.stake_unit_resource_address(),
-            AssetPool::CustomPool(pool) => pool.stake_unit_resource_address(),
-        }
-    }
-
-    pub fn pool_address(&self) -> ComponentAddress {
-        match self {
-            AssetPool::Validator(validator) => validator.pool_address(),
-            AssetPool::LiquidityPool(pool) => pool.pool_address(),
-            AssetPool::CustomPool(pool) => pool.pool_address(),
         }
     }
 }

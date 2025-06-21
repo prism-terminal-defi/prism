@@ -28,8 +28,6 @@ macro_rules! pool {
     };
 }
 
-pub const NUMBER_VALIDATOR_PRICES_TO_UPDATE: u32 = 5;
-
 #[blueprint_with_traits]
 pub mod adapter {
     use scrypto::prelude::sbor;
@@ -37,6 +35,7 @@ pub mod adapter {
     enable_method_auth! {
         methods {
             change_pool_address => restrict_to: [OWNER];
+            change_number_validator_prices_to_update => restrict_to: [OWNER];
             get_redemption_value => PUBLIC;
             calc_asset_owed_amount => PUBLIC;
             total_stake_amount => PUBLIC;
@@ -48,7 +47,8 @@ pub mod adapter {
     }
 
     struct CaviarLsuPoolAdapter {
-        pool_address: ComponentAddress
+        pool_address: ComponentAddress,
+        number_validator_prices_to_update: u32
     }
 
     impl CaviarLsuPoolAdapter {
@@ -68,7 +68,8 @@ pub mod adapter {
                 });
 
             Self {
-                pool_address
+                pool_address,
+                number_validator_prices_to_update: 5,
             }
             .instantiate()
             .prepare_to_globalize(OwnerRole::Updatable(owner_access_rule))
@@ -86,6 +87,13 @@ pub mod adapter {
             new_pool_address: ComponentAddress
         ) {
             self.pool_address = new_pool_address;
+        }
+
+        pub fn change_number_validator_prices_to_update(
+            &mut self,
+            new_number_validator_prices_to_update: u32
+        ) {
+            self.number_validator_prices_to_update = new_number_validator_prices_to_update;
         }
 
         fn underlying_asset_divisibility(&self) -> u8 {
@@ -167,7 +175,8 @@ pub mod adapter {
         }
 
         fn get_redemption_factor(&self) -> Decimal {
-            let caviar_pool = pool!(self.pool_address);
+            let mut caviar_pool = pool!(self.pool_address);
+            caviar_pool.update_multiple_validator_prices(self.number_validator_prices_to_update);
             caviar_pool.get_dex_valuation_xrd()
             .checked_div(caviar_pool.get_liquidity_token_total_supply())
             .expect("[CaviarLsuPoolAdapter] Redemption factor calculation failed")
