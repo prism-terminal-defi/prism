@@ -1,0 +1,33 @@
+name: Validate with scrypto-builder
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [development, main]
+
+jobs:
+  validate-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout OSS repo
+        uses: actions/checkout@v4
+
+      - name: Pull scrypto-builder Docker image
+        run: |
+          DOCKER_DEFAULT_PLATFORM=linux/amd64 docker pull radixdlt/scrypto-builder:v1.3.0
+
+      - name: Compile with scrypto-builder
+        run: |
+          DOCKER_DEFAULT_PLATFORM=linux/amd64 docker run --rm -v "$PWD:/src" radixdlt/scrypto-builder:v1.3.0 --package amm
+          DOCKER_DEFAULT_PLATFORM=linux/amd64 docker run --rm -v "$PWD:/src" radixdlt/scrypto-builder:v1.3.0 --package prism-splitter-v2
+          DOCKER_DEFAULT_PLATFORM=linux/amd64 docker run --rm -v "$PWD:/src" radixdlt/scrypto-builder:v1.3.0 --package lsulp-adapter-v1
+
+      - name: Upload build artifacts (optional)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrypto-build-artifacts
+          path: |
+            **/target/wasm32-unknown-unknown/release/*.wasm
+            **/target/wasm32-unknown-unknown/release/*.rpd

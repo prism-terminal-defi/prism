@@ -1,0 +1,25 @@
+[package]
+name = "lsulp-adapter-v1"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Defines the adapter for LSULP"
+
+[dependencies]
+sbor = { workspace = true }
+scrypto = { workspace = true }
+radix-engine-interface = { workspace = true }
+radix-transactions = { workspace = true, optional = true }
+radix-common = { workspace = true }
+
+scrypto_math = { workspace = true }
+scrypto-interface = { path = "../libraries/scrypto-interface" }
+ports-interface = { path = "../libraries/ports-interface" }
+
+[features]
+default = []
+test = []
+
+manifest-builder-stubs = ["dep:radix-transactions"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
